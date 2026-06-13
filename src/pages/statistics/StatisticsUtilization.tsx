@@ -1,42 +1,39 @@
 import { useEffect, useState } from 'react'
-import { PieChart as PieIcon, Download, X } from 'lucide-react'
 import {
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart3, Download, TrendingUp, FileWarning, Warehouse, Calendar,
+} from 'lucide-react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend, LineChart, Line,
 } from 'recharts'
 import { api } from '@/lib/api'
-import type { UtilizationStats, WarehouseCapacityItem } from '@/types/api'
+import type { MonthlyReport } from '@/types/api'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 
-const PIE_COLORS = ['var(--color-accent)', 'var(--color-success)']
+const CHART_COLORS = ['#D4A843', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6']
 
 export default function StatisticsUtilization() {
-  const [utilData, setUtilData] = useState<UtilizationStats | null>(null)
-  const [capacityData, setCapacityData] = useState<WarehouseCapacityItem[]>([])
+  const [report, setReport] = useState<MonthlyReport | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showExport, setShowExport] = useState(false)
-  const [exportFormat, setExportFormat] = useState<'pdf' | 'excel'>('pdf')
   const [exportMonth, setExportMonth] = useState(new Date().toISOString().slice(0, 7))
   const [toast, setToast] = useState('')
 
   useEffect(() => {
     const fetch = async () => {
+      setLoading(true)
       try {
-        const [util, cap] = await Promise.all([
-          api.getUtilizationStats(),
-          api.getWarehouseCapacity(),
-        ])
-        setUtilData(util)
-        setCapacityData(cap)
+        const data = await api.getMonthlyReport(exportMonth)
+        setReport(data)
       } catch {
-        setUtilData(null)
+        setReport(null)
       } finally {
         setLoading(false)
       }
     }
     fetch()
-  }, [])
+  }, [exportMonth])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -44,8 +41,7 @@ export default function StatisticsUtilization() {
   }
 
   const exportPDF = () => {
-    if (!utilData) return
-
+    if (!report) return
     const doc = new jsPDF()
     const pageWidth = doc.internal.pageSize.getWidth()
 
@@ -55,124 +51,169 @@ export default function StatisticsUtilization() {
     doc.text(title, (pageWidth - titleWidth) / 2, 25)
 
     doc.setFontSize(10)
-    const monthText = `统计月份：${exportMonth}`
+    const monthText = `统计月份：${report.month}`
     doc.text(monthText, 14, 35)
 
-    const basicData = [
-      ['总档案数', utilData.totalArchives.toString()],
-      ['借出数', utilData.borrowedArchives.toString()],
-      ['在库数', utilData.inStockArchives.toString()],
-      ['利用率', `${utilData.utilizationRate.toFixed(1)}%`],
+    const summaryData = [
+      ['总档案数', report.summary.totalArchives.toString()],
+      ['当月借阅申请', report.summary.monthBorrows.toString()],
+      ['当月通过', report.summary.monthApproved.toString()],
+      ['当月待审批', report.summary.monthPending.toString()],
+      ['当月拒绝', report.summary.monthRejected.toString()],
+      ['当月新增逾期', report.summary.monthOverdueCount.toString()],
+      ['当月逾期费用', `${report.summary.monthOverdueFee.toFixed(2)}元`],
+      ['累计逾期未还', report.summary.totalOverdueCount.toString()],
+      ['累计逾期费用', `${report.summary.totalOverdueFee.toFixed(2)}元`],
     ]
 
     autoTable(doc, {
       head: [['指标', '数值']],
-      body: basicData,
-      startY: 45,
+      body: summaryData,
+      startY: 42,
       styles: { fontSize: 10 },
+      headStyles: { fillColor: [212, 168, 67], textColor: 0 },
+      theme: 'grid',
+      tableWidth: 85,
+      margin: { left: 14 },
+    })
+
+    const yAfterSummary = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
+
+    doc.setFontSize(12)
+    doc.text('当月借阅趋势（按日）', 14, yAfterSummary)
+
+    const trendRows = report.borrowingTrend.map(t => [t.date.slice(5), t.count.toString(), t.approved.toString()])
+    autoTable(doc, {
+      head: [['日期', '申请数', '通过数']],
+      body: trendRows.length > 0 ? trendRows : [['-', '0', '0']],
+      startY: yAfterSummary + 5,
+      styles: { fontSize: 9 },
       headStyles: { fillColor: [59, 130, 246] },
+      theme: 'grid',
+      margin: { left: 14, right: 14 },
+    })
+
+    const yAfterTrend = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
+
+    doc.setFontSize(12)
+    doc.text('按借阅类型统计', 14, yAfterTrend)
+
+    const typeRows = report.borrowByType.map(t => [t.type, t.count.toString()])
+    autoTable(doc, {
+      head: [['类型', '数量']],
+      body: typeRows.length > 0 ? typeRows : [['-', '0']],
+      startY: yAfterTrend + 5,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [16, 185, 129] },
       theme: 'grid',
       tableWidth: 80,
       margin: { left: 14 },
     })
 
-    const typeRows = utilData.typeStats.map(ts => [
-      ts.type,
-      ts.total.toString(),
-      ts.borrowed.toString(),
-      ts.in_stock.toString(),
-      `${(ts.total > 0 ? (ts.borrowed / ts.total) * 100 : 0).toFixed(1)}%`,
-    ])
-
-    const yAfterBasic = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
-
-    doc.setFontSize(12)
-    doc.text('按类型统计', 14, yAfterBasic)
-
-    autoTable(doc, {
-      head: [['类型', '总计', '借出', '在库', '利用率']],
-      body: typeRows,
-      startY: yAfterBasic + 5,
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [59, 130, 246] },
-      theme: 'grid',
-      margin: { left: 14, right: 14 },
-    })
-
     const yAfterType = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
 
     doc.setFontSize(12)
-    doc.text('库房容量统计', 14, yAfterType)
+    doc.text('各库房利用率与借阅量', 14, yAfterType)
 
-    const capRows = capacityData.map(w => [
-      w.name,
-      w.capacity.toString(),
-      w.used.toString(),
-      `${w.usage_rate.toFixed(1)}%`,
+    const whRows = report.warehouseUtilization.map(w => [
+      w.name, w.location, `${w.used}/${w.capacity}`,
+      `${w.usage_rate.toFixed(1)}%`, w.month_borrow_count.toString(),
     ])
-
     autoTable(doc, {
-      head: [['库房名称', '容量', '已用', '使用率']],
-      body: capRows,
+      head: [['库房名称', '位置', '容量使用', '使用率', '当月借阅']],
+      body: whRows,
       startY: yAfterType + 5,
       styles: { fontSize: 9 },
-      headStyles: { fillColor: [59, 130, 246] },
+      headStyles: { fillColor: [139, 92, 246] },
       theme: 'grid',
       margin: { left: 14, right: 14 },
     })
 
-    doc.save(`档案馆运行报告_${exportMonth}.pdf`)
+    const yAfterWh = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
+
+    if (yAfterWh > 260) {
+      doc.addPage()
+    }
+    const nextY = yAfterWh > 260 ? 25 : yAfterWh
+
+    doc.setFontSize(12)
+    doc.text('按部门借阅统计', 14, nextY)
+
+    const deptRows = report.borrowByDepartment.map(d => [d.department || '未知', d.count.toString(), d.approved.toString()])
+    autoTable(doc, {
+      head: [['部门', '申请数', '通过数']],
+      body: deptRows.length > 0 ? deptRows : [['-', '0', '0']],
+      startY: nextY + 5,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [239, 68, 68] },
+      theme: 'grid',
+      margin: { left: 14, right: 14 },
+    })
+
+    doc.save(`档案馆月度报告_${report.month}.pdf`)
   }
 
   const exportExcel = () => {
-    if (!utilData) return
-
+    if (!report) return
     const wb = XLSX.utils.book_new()
 
-    const basicData = [
+    const summaryData = [
       ['指标', '数值'],
-      ['总档案数', utilData.totalArchives],
-      ['借出数', utilData.borrowedArchives],
-      ['在库数', utilData.inStockArchives],
-      ['利用率', `${utilData.utilizationRate.toFixed(1)}%`],
-      ['统计月份', exportMonth],
+      ['统计月份', report.month],
+      ['总档案数', report.summary.totalArchives],
+      ['当月借阅申请', report.summary.monthBorrows],
+      ['当月通过', report.summary.monthApproved],
+      ['当月待审批', report.summary.monthPending],
+      ['当月拒绝', report.summary.monthRejected],
+      ['当月新增逾期', report.summary.monthOverdueCount],
+      ['当月逾期费用(元)', report.summary.monthOverdueFee],
+      ['累计逾期未还', report.summary.totalOverdueCount],
+      ['累计逾期费用(元)', report.summary.totalOverdueFee],
     ]
-    const ws1 = XLSX.utils.aoa_to_sheet(basicData)
-    XLSX.utils.book_append_sheet(wb, ws1, '基本指标')
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryData)
+    ws1['!cols'] = [{ wch: 18 }, { wch: 16 }]
+    XLSX.utils.book_append_sheet(wb, ws1, '核心指标')
+
+    const trendData = [
+      ['日期', '申请数', '通过数'],
+      ...report.borrowingTrend.map(t => [t.date, t.count, t.approved]),
+    ]
+    const ws2 = XLSX.utils.aoa_to_sheet(trendData)
+    ws2['!cols'] = [{ wch: 12 }, { wch: 10 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, ws2, '借阅趋势')
 
     const typeData = [
-      ['类型', '总计', '借出', '在库', '利用率'],
-      ...utilData.typeStats.map(ts => [
-        ts.type,
-        ts.total,
-        ts.borrowed,
-        ts.in_stock,
-        `${(ts.total > 0 ? (ts.borrowed / ts.total) * 100 : 0).toFixed(1)}%`,
+      ['类型', '数量'],
+      ...report.borrowByType.map(t => [t.type, t.count]),
+    ]
+    const ws3 = XLSX.utils.aoa_to_sheet(typeData)
+    ws3['!cols'] = [{ wch: 14 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, ws3, '借阅类型')
+
+    const whData = [
+      ['库房名称', '位置', '容量', '已用', '使用率(%)', '当月借阅'],
+      ...report.warehouseUtilization.map(w => [
+        w.name, w.location, w.capacity, w.used, w.usage_rate, w.month_borrow_count,
       ]),
     ]
-    const ws2 = XLSX.utils.aoa_to_sheet(typeData)
-    XLSX.utils.book_append_sheet(wb, ws2, '类型统计')
+    const ws4 = XLSX.utils.aoa_to_sheet(whData)
+    ws4['!cols'] = [{ wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, ws4, '库房统计')
 
-    const capData = [
-      ['库房名称', '位置', '容量', '已用', '使用率'],
-      ...capacityData.map(w => [
-        w.name,
-        w.location,
-        w.capacity,
-        w.used,
-        `${w.usage_rate.toFixed(1)}%`,
-      ]),
+    const deptData = [
+      ['部门', '申请数', '通过数'],
+      ...report.borrowByDepartment.map(d => [d.department || '未知', d.count, d.approved]),
     ]
-    const ws3 = XLSX.utils.aoa_to_sheet(capData)
-    XLSX.utils.book_append_sheet(wb, ws3, '库容统计')
+    const ws5 = XLSX.utils.aoa_to_sheet(deptData)
+    ws5['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(wb, ws5, '部门统计')
 
-    XLSX.writeFile(wb, `档案馆运行报告_${exportMonth}.xlsx`)
+    XLSX.writeFile(wb, `档案馆月度报告_${report.month}.xlsx`)
   }
 
-  const handleExport = () => {
-    setShowExport(false)
+  const handleExport = (format: 'pdf' | 'excel') => {
     try {
-      if (exportFormat === 'pdf') {
+      if (format === 'pdf') {
         exportPDF()
       } else {
         exportExcel()
@@ -183,7 +224,7 @@ export default function StatisticsUtilization() {
     }
   }
 
-  if (loading || !utilData) {
+  if (loading || !report) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
@@ -191,20 +232,40 @@ export default function StatisticsUtilization() {
     )
   }
 
-  const inStockRate = utilData.totalArchives > 0
-    ? ((utilData.inStockArchives / utilData.totalArchives) * 100)
-    : 0
+  const s = report.summary
+  const monthLabel = `${report.month.slice(0, 4)}年${report.month.slice(5, 7)}月`
+  const approvalRate = s.monthBorrows > 0 ? ((s.monthApproved / s.monthBorrows) * 100).toFixed(1) : '0'
 
-  const pieData = [
-    { name: '借出', value: utilData.borrowedArchives },
-    { name: '在库', value: utilData.inStockArchives },
-  ]
-
-  const barData = capacityData.map(w => ({
-    name: w.name,
-    容量: w.capacity,
-    已用: w.used,
+  const trendChartData = report.borrowingTrend.map(t => ({
+    date: t.date.slice(5),
+    申请: t.count,
+    通过: t.approved,
   }))
+
+  const pieData = report.borrowByType.map((t, i) => ({
+    name: t.type,
+    value: t.count,
+    color: CHART_COLORS[i % CHART_COLORS.length],
+  }))
+
+  const whChartData = report.warehouseUtilization.map(w => ({
+    name: w.name,
+    使用率: Number(w.usage_rate.toFixed(1)),
+    当月借阅: w.month_borrow_count,
+  }))
+
+  const deptChartData = report.borrowByDepartment
+    .slice(0, 6)
+    .map(d => ({ name: d.department || '未知', 申请: d.count, 通过: d.approved }))
+
+  const summaryCards = [
+    { label: '总档案数', value: s.totalArchives, icon: BarChart3, color: 'text-blue-400', bg: 'bg-blue-400/10' },
+    { label: `${monthLabel}借阅申请`, value: s.monthBorrows, icon: TrendingUp, color: 'text-accent', bg: 'bg-accent/10' },
+    { label: '审批通过率', value: `${approvalRate}%`, icon: TrendingUp, color: 'text-success', bg: 'bg-success/10' },
+    { label: '累计逾期未还', value: s.totalOverdueCount, icon: FileWarning, color: 'text-danger', bg: 'bg-danger/10' },
+    { label: '累计逾期费用', value: `${s.totalOverdueFee.toFixed(1)}元`, icon: FileWarning, color: 'text-warning', bg: 'bg-warning/10' },
+    { label: '待审批', value: s.monthPending, icon: Calendar, color: 'text-purple-400', bg: 'bg-purple-400/10' },
+  ]
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -214,180 +275,199 @@ export default function StatisticsUtilization() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <h2 className="section-title">
-          <PieIcon className="w-5 h-5 text-accent" />
-          利用率与库容统计
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <h2 className="section-title m-0">
+          <BarChart3 className="w-5 h-5 text-accent" />
+          月度运行报告
         </h2>
-        <button onClick={() => setShowExport(true)} className="btn-primary">
-          <Download className="w-4 h-4" />
-          导出报告
-        </button>
-      </div>
-
-      <div className="grid grid-cols-3 gap-5">
-        <div className="card-base p-5 flex flex-col items-center justify-center">
-          <CircularProgress value={utilData.utilizationRate} label="总利用率" />
-        </div>
-        <div className="card-base p-5 flex flex-col items-center justify-center">
-          <CircularProgress value={inStockRate} label="在库率" />
-        </div>
-        <div className="card-base p-5">
-          <h4 className="text-sm text-text-muted mb-2 text-center">档案状态分布</h4>
-          <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" paddingAngle={4}>
-                {pieData.map((_, i) => (
-                  <Cell key={i} fill={PIE_COLORS[i]} />
-                ))}
-              </Pie>
-              <Tooltip contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 8 }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex justify-center gap-4 mt-1">
-            {pieData.map((d, i) => (
-              <div key={d.name} className="flex items-center gap-1.5 text-xs text-text-secondary">
-                <span className="w-2.5 h-2.5 rounded-full" style={{ background: PIE_COLORS[i] }} />
-                {d.name} ({d.value})
-              </div>
-            ))}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-text-muted" />
+            <input
+              type="month"
+              className="input-base !w-[160px]"
+              value={exportMonth}
+              onChange={(e) => setExportMonth(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => handleExport('pdf')} className="btn-primary flex items-center gap-1.5">
+              <Download className="w-4 h-4" />
+              导出PDF
+            </button>
+            <button onClick={() => handleExport('excel')} className="btn-secondary flex items-center gap-1.5">
+              <Download className="w-4 h-4" />
+              导出Excel
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="card-base p-5">
-        <h3 className="section-title text-base mb-4">按类型统计</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {utilData.typeStats.map(ts => {
-            const rate = ts.total > 0 ? ((ts.borrowed / ts.total) * 100) : 0
-            return (
-              <div key={ts.type} className="p-4 rounded-lg bg-surface/50 border border-border/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-text-primary">{ts.type}</span>
-                  <span className="text-xs text-text-muted">利用率 {rate.toFixed(1)}%</span>
-                </div>
-                <div className="w-full h-2 bg-border rounded-full overflow-hidden mb-2">
-                  <div className="h-full bg-accent rounded-full transition-all duration-500" style={{ width: `${rate}%` }} />
-                </div>
-                <div className="flex justify-between text-xs text-text-muted">
-                  <span>总计 {ts.total}</span>
-                  <span>借出 {ts.borrowed}</span>
-                  <span>在库 {ts.in_stock}</span>
-                </div>
+      <div className="grid grid-cols-3 gap-5">
+        {summaryCards.map((c, i) => (
+          <div key={i} className="card-base p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-text-muted text-sm">{c.label}</p>
+                <p className={`text-2xl font-semibold mt-2 ${c.color}`}>{c.value}</p>
               </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="card-base p-5">
-        <h3 className="section-title text-base mb-4">库房容量统计</h3>
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={barData} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-            <XAxis type="number" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-            <YAxis type="category" dataKey="name" tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }} />
-            <Tooltip contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 8 }} />
-            <Bar dataKey="容量" fill="var(--color-border-light)" radius={[0, 4, 4, 0]} />
-            <Bar dataKey="已用" fill="var(--color-accent)" radius={[0, 4, 4, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        {capacityData.map(w => (
-          <div key={w.id} className="card-base p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-text-primary">{w.name}</span>
-              <span className={`badge ${w.usage_rate > 80 ? 'badge-danger' : w.usage_rate > 60 ? 'badge-warning' : 'badge-success'}`}>
-                {w.usage_rate}%
-              </span>
-            </div>
-            <div className="w-full h-2 bg-border rounded-full overflow-hidden mb-2">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  w.usage_rate > 80 ? 'bg-danger' : w.usage_rate > 60 ? 'bg-warning' : 'bg-success'
-                }`}
-                style={{ width: `${Math.min(w.usage_rate, 100)}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-text-muted">
-              <span>已用 {w.used}</span>
-              <span>容量 {w.capacity}</span>
+              <div className={`w-11 h-11 rounded-lg flex items-center justify-center ${c.bg}`}>
+                <c.icon className={`w-5 h-5 ${c.color}`} />
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      {showExport && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 animate-fade-in" onClick={() => setShowExport(false)}>
-          <div className="bg-card border border-border rounded-xl p-6 w-96 shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-serif font-semibold text-text-primary">导出报告</h3>
-              <button onClick={() => setShowExport(false)} className="text-text-muted hover:text-text-primary">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-text-secondary mb-2 block">导出格式</label>
-                <div className="flex gap-2">
-                  {(['pdf', 'excel'] as const).map(fmt => (
-                    <button
-                      key={fmt}
-                      onClick={() => setExportFormat(fmt)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${
-                        exportFormat === fmt
-                          ? 'border-accent bg-accent/10 text-accent'
-                          : 'border-border text-text-secondary hover:border-accent/40'
-                      }`}
-                    >
-                      {fmt === 'pdf' ? 'PDF' : 'Excel'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm text-text-secondary mb-2 block">统计月份</label>
-                <input
-                  type="month"
-                  value={exportMonth}
-                  onChange={e => setExportMonth(e.target.value)}
-                  className="input-base w-full"
-                />
-              </div>
-              <button onClick={handleExport} className="btn-primary w-full justify-center mt-2">
-                <Download className="w-4 h-4" />
-                生成报告
-              </button>
-            </div>
+      <div className="grid grid-cols-2 gap-5">
+        <div className="card-base p-5">
+          <h3 className="text-heading text-sm mb-4">当月借阅趋势（按日）</h3>
+          <div className="h-[280px]">
+            {trendChartData.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-text-muted text-sm">当月暂无数据</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trendChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-card)" />
+                  <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={11} />
+                  <YAxis stroke="var(--color-text-muted)" fontSize={11} />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--color-surface)', border: 'none', borderRadius: '8px', color: 'var(--color-text-primary)' }}
+                    cursor={{ fill: 'rgba(212, 168, 67, 0.05)' }}
+                  />
+                  <Legend />
+                  <Bar dataKey="申请" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="通过" fill="#D4A843" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
-      )}
-    </div>
-  )
-}
 
-function CircularProgress({ value, label }: { value: number; label: string }) {
-  const radius = 54
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference - (value / 100) * circumference
-  return (
-    <div className="flex flex-col items-center">
-      <svg width="130" height="130" className="-rotate-90">
-        <circle cx="65" cy="65" r={radius} fill="none" stroke="var(--color-border)" strokeWidth="10" />
-        <circle
-          cx="65" cy="65" r={radius} fill="none"
-          stroke="var(--color-accent)" strokeWidth="10" strokeLinecap="round"
-          strokeDasharray={circumference} strokeDashoffset={offset}
-          className="transition-all duration-700"
-        />
-      </svg>
-      <div className="absolute mt-8 flex flex-col items-center">
-        <span className="text-2xl font-bold text-text-primary font-serif">{value.toFixed(1)}%</span>
-        <span className="text-xs text-text-muted mt-1">{label}</span>
+        <div className="card-base p-5">
+          <h3 className="text-heading text-sm mb-4">借阅类型分布</h3>
+          <div className="h-[280px]">
+            {pieData.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-text-muted text-sm">当月暂无数据</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="45%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    dataKey="value"
+                    paddingAngle={3}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={false}
+                  >
+                    {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ background: 'var(--color-surface)', border: 'none', borderRadius: '8px', color: 'var(--color-text-primary)' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        <div className="card-base p-5">
+          <h3 className="text-heading text-sm mb-4 flex items-center gap-1.5">
+            <Warehouse className="w-4 h-4 text-accent" />
+            各库房利用率与借阅量
+          </h3>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={whChartData} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-card)" />
+                <XAxis type="number" stroke="var(--color-text-muted)" fontSize={11} />
+                <YAxis dataKey="name" type="category" stroke="var(--color-text-muted)" fontSize={11} width={72} />
+                <Tooltip
+                  contentStyle={{ background: 'var(--color-surface)', border: 'none', borderRadius: '8px', color: 'var(--color-text-primary)' }}
+                />
+                <Legend />
+                <Bar dataKey="使用率" fill="#8B5CF6" radius={[0, 4, 4, 0]} />
+                <Bar dataKey="当月借阅" fill="#10B981" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="card-base p-5">
+          <h3 className="text-heading text-sm mb-4">部门借阅统计（TOP6）</h3>
+          <div className="h-[300px]">
+            {deptChartData.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-text-muted text-sm">当月暂无数据</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={deptChartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-card)" />
+                  <XAxis dataKey="name" stroke="var(--color-text-muted)" fontSize={10} />
+                  <YAxis stroke="var(--color-text-muted)" fontSize={11} />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--color-surface)', border: 'none', borderRadius: '8px', color: 'var(--color-text-primary)' }}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="申请" stroke="#EF4444" strokeWidth={2} dot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="通过" stroke="#10B981" strokeWidth={2} dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
       </div>
-      <span className="text-xs text-text-muted mt-2">{label}</span>
+
+      <div className="card-base p-5">
+        <h3 className="text-heading text-sm mb-4 flex items-center gap-1.5">
+          <Warehouse className="w-4 h-4 text-accent" />
+          库房明细
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="table-header">
+                <th className="px-4 py-3 text-left">库房名称</th>
+                <th className="px-4 py-3 text-left">位置</th>
+                <th className="px-4 py-3 text-left">容量</th>
+                <th className="px-4 py-3 text-left">已用</th>
+                <th className="px-4 py-3 text-left">使用率</th>
+                <th className="px-4 py-3 text-left">当月借阅</th>
+                <th className="px-4 py-3 text-left">库存状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.warehouseUtilization.map(w => (
+                <tr key={w.id} className="table-row">
+                  <td className="px-4 py-3 text-text-primary font-medium">{w.name}</td>
+                  <td className="px-4 py-3 text-text-secondary">{w.location}</td>
+                  <td className="px-4 py-3 text-text-secondary">{w.capacity}</td>
+                  <td className="px-4 py-3 text-text-secondary">{w.used}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-2 bg-card rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${w.usage_rate > 80 ? 'bg-danger' : w.usage_rate > 60 ? 'bg-warning' : 'bg-success'}`}
+                          style={{ width: `${Math.min(w.usage_rate, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-text-secondary text-xs">{w.usage_rate.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-accent font-medium">{w.month_borrow_count}</td>
+                  <td className="px-4 py-3">
+                    <span className={w.usage_rate > 80 ? 'badge-danger' : w.usage_rate > 60 ? 'badge-warning' : 'badge-success'}>
+                      {w.usage_rate > 80 ? '容量紧张' : w.usage_rate > 60 ? '正常使用' : '库存充足'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

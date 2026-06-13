@@ -21,6 +21,9 @@ import type {
   WarehouseCapacityItem,
   WarehouseDetail,
   PaginatedResponse,
+  User,
+  AppointmentItem,
+  MonthlyReport,
 } from '@/types/api'
 
 const BASE_URL = '/api'
@@ -156,4 +159,21 @@ export const api = {
 
   getWarehouseCapacity: () =>
     request<WarehouseCapacityItem[]>('/statistics/warehouse-capacity'),
+
+  getMonthlyReport: (month?: string) => {
+    const query = month ? `?month=${month}` : ''
+    return request<MonthlyReport>(`/statistics/monthly-report${query}`)
+  },
+
+  getCurrentUser: () =>
+    request<User>('/auth/current-user'),
+
+  getUsers: () =>
+    request<User[]>('/auth/users'),
+
+  login: (data: { username?: string; role?: string }) =>
+    request<User>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+
+  getArchiveAppointments: (archiveId: string) =>
+    request<AppointmentItem[]>(`/borrows/appointments/${archiveId}`),
 }

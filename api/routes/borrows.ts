@@ -306,4 +306,25 @@ router.post('/:id/remind', (req: Request, res: Response): void => {
   }
 })
 
+router.get('/appointments/:archiveId', (req: Request, res: Response): void => {
+  try {
+    const { archiveId } = req.params
+
+    const appointments = db.prepare(
+      `SELECT b.id, b.appointment_time, b.expected_return, b.status, b.approval_result,
+              u.name as user_name, u.department as user_department
+       FROM borrows b
+       LEFT JOIN users u ON b.user_id = u.id
+       WHERE b.archive_id = ?
+         AND b.status IN ('待审批', '已通过', '借出中')
+         AND b.appointment_time IS NOT NULL
+       ORDER BY b.appointment_time ASC`
+    ).all(archiveId)
+
+    res.json({ success: true, data: appointments })
+  } catch (error) {
+    res.status(500).json({ success: false, error: '获取预约占用失败' })
+  }
+})
+
 export default router

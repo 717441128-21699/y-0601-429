@@ -251,3 +251,52 @@ export interface PaginatedResponse<T> {
   pageSize: number
   totalPages: number
 }
+
+export interface User {
+  id: string
+  name: string
+  role: string
+  department: string
+  permissionLevel: string
+}
+
+export interface AppointmentItem {
+  id: string
+  appointment_time: string
+  expected_return: string
+  status: string
+  approval_result: string | null
+  user_name: string
+  user_department: string
+}
+
+export interface MonthlyReportSummary {
+  totalArchives: number
+  monthBorrows: number
+  monthApproved: number
+  monthPending: number
+  monthRejected: number
+  monthOverdueCount: number
+  monthOverdueFee: number
+  totalOverdueCount: number
+  totalOverdueFee: number
+}
+
+export interface MonthlyReport {
+  month: string
+  summary: MonthlyReportSummary
+  borrowingTrend: { date: string; count: number; approved: number }[]
+  borrowByType: { type: string; count: number }[]
+  borrowByDepartment: { department: string; count: number; approved: number }[]
+  warehouseUtilization: {
+    id: string
+    name: string
+    location: string
+    capacity: number
+    used: number
+    usage_rate: number
+    month_borrow_count: number
+  }[]
+  warehouseArchiveStats: { id: string; name: string; type: string; count: number }[]
+  typeStats: { type: string; total: number; borrowed: number; in_stock: number; month_borrowed: number }[]
+}

@@ -195,4 +195,156 @@ router.get('/overview', (req: Request, res: Response): void => {
   }
 })
 
+router.get('/monthly-report', (req: Request, res: Response): void => {
+  try {
+    const month = (req.query.month as string) || new Date().toISOString().slice(0, 7)
+    const startDate = `${month}-01T00:00:00.000Z`
+    const endDate = new Date(new Date(startDate).getFullYear(), new Date(startDate).getMonth() + 1, 0, 23, 59, 59).toISOString()
+
+    const totalArchives = db.prepare('SELECT COUNT(*) as count FROM archives').get() as any
+
+    const monthBorrows = db.prepare(
+      `SELECT COUNT(*) as count
+       FROM borrows
+       WHERE created_at >= ? AND created_at <= ?`
+    ).get(startDate, endDate) as any
+
+    const monthApproved = db.prepare(
+      `SELECT COUNT(*) as count
+       FROM borrows
+       WHERE created_at >= ? AND created_at <= ?
+         AND status IN ('已通过', '借出中', '已归还', '已超期')`
+    ).get(startDate, endDate) as any
+
+    const monthPending = db.prepare(
+      `SELECT COUNT(*) as count
+       FROM borrows
+       WHERE created_at >= ? AND created_at <= ?
+         AND status = '待审批'`
+    ).get(startDate, endDate) as any
+
+    const monthRejected = db.prepare(
+      `SELECT COUNT(*) as count
+       FROM borrows
+       WHERE created_at >= ? AND created_at <= ?
+         AND status = '已拒绝'`
+    ).get(startDate, endDate) as any
+
+    const monthOverdue = db.prepare(
+      `SELECT COUNT(*) as count,
+              COALESCE(SUM(overdue_fee), 0) as total_fee
+       FROM borrows
+       WHERE expected_return >= ? AND expected_return <= ?
+         AND status IN ('已超期', '借出中')
+         AND datetime(expected_return) < datetime('now')`
+    ).get(startDate, endDate) as any
+
+    const totalOverdue = db.prepare(
+      `SELECT COUNT(*) as count,
+              COALESCE(SUM(overdue_fee), 0) as total_fee
+       FROM borrows
+       WHERE status IN ('已超期', '借出中')
+         AND expected_return IS NOT NULL
+         AND datetime(expected_return) < datetime('now')`
+    ).get() as any
+
+    const borrowingTrend = db.prepare(
+      `SELECT strftime('%Y-%m-%d', created_at) as date,
+              COUNT(*) as count,
+              SUM(CASE WHEN status IN ('已通过','借出中','已归还','已超期') THEN 1 ELSE 0 END) as approved
+       FROM borrows
+       WHERE created_at >= ? AND created_at <= ?
+       GROUP BY strftime('%Y-%m-%d', created_at)
+       ORDER BY date ASC`
+    ).all(startDate, endDate)
+
+    const borrowByType = db.prepare(
+      `SELECT borrow_type as type, COUNT(*) as count
+       FROM borrows
+       WHERE created_at >= ? AND created_at <= ?
+       GROUP BY borrow_type
+       ORDER BY count DESC`
+    ).all(startDate, endDate)
+
+    const borrowByDepartment = db.prepare(
+      `SELECT u.department as department,
+              COUNT(*) as count,
+              SUM(CASE WHEN b.status IN ('已通过','借出中','已归还','已超期') THEN 1 ELSE 0 END) as approved
+       FROM borrows b
+       LEFT JOIN users u ON b.user_id = u.id
+       WHERE b.created_at >= ? AND b.created_at <= ?
+       GROUP BY u.department
+       ORDER BY count DESC`
+    ).all(startDate, endDate)
+
+    const warehouseUtil = db.prepare(
+      `SELECT w.id, w.name, w.location, w.capacity, w.used,
+              ROUND(CAST(w.used AS REAL) / w.capacity * 100, 2) as usage_rate,
+              (
+                SELECT COUNT(*)
+                FROM borrows b
+                LEFT JOIN archives a ON b.archive_id = a.id
+                WHERE a.warehouse_id = w.id
+                  AND b.created_at >= ? AND b.created_at <= ?
+                  AND b.status IN ('已通过','借出中','已归还','已超期')
+              ) as month_borrow_count
+       FROM warehouses w
+       ORDER BY w.name`
+    ).all(startDate, endDate)
+
+    const warehouseArchiveStats = db.prepare(
+      `SELECT w.id, w.name,
+              a.type,
+              COUNT(*) as count
+       FROM archives a
+       LEFT JOIN warehouses w ON a.warehouse_id = w.id
+       GROUP BY w.id, a.type
+       ORDER BY w.name, count DESC`
+    ).all()
+
+    const typeStats = db.prepare(
+      `SELECT a.type,
+              COUNT(*) as total,
+              SUM(CASE WHEN a.status IN ('借出','锁定') THEN 1 ELSE 0 END) as borrowed,
+              SUM(CASE WHEN a.status = '在库' THEN 1 ELSE 0 END) as in_stock,
+              (
+                SELECT COUNT(*)
+                FROM borrows b
+                WHERE b.archive_id IN (SELECT id FROM archives WHERE type = a.type)
+                  AND b.created_at >= ? AND b.created_at <= ?
+                  AND b.status IN ('已通过','借出中','已归还','已超期')
+              ) as month_borrowed
+       FROM archives a
+       GROUP BY a.type
+       ORDER BY total DESC`
+    ).all(startDate, endDate)
+
+    res.json({
+      success: true,
+      data: {
+        month,
+        summary: {
+          totalArchives: totalArchives.count,
+          monthBorrows: monthBorrows.count,
+          monthApproved: monthApproved.count,
+          monthPending: monthPending.count,
+          monthRejected: monthRejected.count,
+          monthOverdueCount: monthOverdue.count || 0,
+          monthOverdueFee: monthOverdue.total_fee || 0,
+          totalOverdueCount: totalOverdue.count || 0,
+          totalOverdueFee: totalOverdue.total_fee || 0,
+        },
+        borrowingTrend,
+        borrowByType,
+        borrowByDepartment,
+        warehouseUtilization: warehouseUtil,
+        warehouseArchiveStats,
+        typeStats,
+      },
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, error: '获取月度报告失败' })
+  }
+})
+
 export default router
