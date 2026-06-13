@@ -1,0 +1,235 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #1B2A4A;
+  --color-primary-light: #2A3F6B;
+  --color-accent: #D4A843;
+  --color-accent-light: #E0BF79;
+  --color-neutral-gray: #64748B;
+  --color-success: #10B981;
+  --color-danger: #EF4444;
+  --color-warning: #F59E0B;
+  --color-surface: #0F1B2D;
+  --color-card: #162032;
+  --color-card-hover: #1E2D45;
+  --color-border: #1E293B;
+  --color-border-light: #334155;
+  --color-text-primary: #F1F5F9;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #64748B;
+
+  font-family: 'Noto Sans SC', system-ui, sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-light) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-light);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-neutral-gray);
+}
+
+@keyframes cardEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseAlert {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInLeft {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+}
+
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--color-accent-light);
+}
+
+@layer components {
+  .card-base {
+    @apply bg-card rounded-lg border border-border shadow-card transition-all duration-200;
+  }
+
+  .card-base:hover {
+    @apply shadow-card-hover;
+  }
+
+  .card-interactive {
+    @apply card-base cursor-pointer hover:border-accent/30;
+  }
+
+  .card-interactive:hover {
+    background-color: var(--color-card-hover);
+  }
+
+  .text-heading {
+    @apply font-serif text-text-primary font-semibold tracking-wide;
+  }
+
+  .text-body {
+    @apply font-sans text-text-secondary text-sm;
+  }
+
+  .text-label {
+    @apply font-sans text-text-muted text-xs uppercase tracking-wider;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply badge bg-success/20 text-success;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger/20 text-danger;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning/20 text-warning;
+  }
+
+  .badge-accent {
+    @apply badge bg-accent/20 text-accent;
+  }
+
+  .btn-primary {
+    @apply bg-accent hover:bg-accent-400 text-primary font-medium px-4 py-2 rounded-lg transition-all duration-200 inline-flex items-center gap-2;
+  }
+
+  .btn-secondary {
+    @apply bg-card text-text-primary border border-border hover:border-accent/40 font-medium px-4 py-2 rounded-lg transition-all duration-200 inline-flex items-center gap-2;
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--color-card-hover);
+  }
+
+  .btn-danger {
+    @apply bg-danger/20 hover:bg-danger/30 text-danger font-medium px-4 py-2 rounded-lg transition-all duration-200 inline-flex items-center gap-2;
+  }
+
+  .input-base {
+    @apply bg-surface border border-border rounded-lg px-3 py-2 text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-all duration-200;
+  }
+
+  .section-title {
+    @apply text-lg font-serif font-semibold text-text-primary flex items-center gap-2;
+  }
+
+  .animate-card-enter {
+    animation: cardEnter 0.4s ease-out forwards;
+  }
+
+  .animate-pulse-alert {
+    animation: pulseAlert 2s ease-in-out infinite;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+
+  .animate-slide-in {
+    animation: slideInLeft 0.3s ease-out forwards;
+  }
+
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-primary/50 rounded-lg transition-all duration-200;
+  }
+
+  .sidebar-item-active {
+    @apply flex items-center gap-3 px-4 py-2.5 text-sm text-accent bg-accent/10 border-l-2 border-accent rounded-lg;
+  }
+
+  .metric-card {
+    @apply card-base p-5 flex flex-col gap-2;
+  }
+
+  .table-header {
+    @apply bg-card/80 text-text-muted text-xs uppercase tracking-wider;
+  }
+
+  .table-row {
+    @apply border-b border-border transition-colors duration-150;
+  }
+
+  .table-row:hover {
+    background-color: var(--color-card-hover);
+  }
+}
