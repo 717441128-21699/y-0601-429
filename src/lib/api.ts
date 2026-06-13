@@ -89,9 +89,9 @@ export const api = {
   getEnvironmentRealtime: () =>
     request<RealtimeEnvironmentData[]>('/environment/realtime'),
 
-  getEnvironmentHistory: (params: Record<string, string>) => {
-    const query = '?' + new URLSearchParams(params).toString()
-    return request<EnvironmentData[]>(`/environment/history${query}`)
+  getEnvironmentHistory: (warehouseId: string, hours?: number) => {
+    const query = hours ? `?hours=${hours}` : ''
+    return request<EnvironmentData[]>(`/environment/history/${warehouseId}${query}`)
   },
 
   getAlerts: (params?: Record<string, string>) => {

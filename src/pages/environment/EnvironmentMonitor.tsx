@@ -21,7 +21,7 @@ interface MetricCardProps {
   color: string
   normalColor: string
   isOver: boolean
-  data: { value: number }[]
+  data: { value: number; time: string }[]
 }
 
 function MetricCard({ label, unit, value, icon: Icon, color, normalColor, isOver, data }: MetricCardProps) {
@@ -52,6 +52,7 @@ function MetricCard({ label, unit, value, icon: Icon, color, normalColor, isOver
               labelStyle={{ color: '#94A3B8' }}
               itemStyle={{ color: displayColor }}
               formatter={(v: number) => [v.toFixed(1), label]}
+              labelFormatter={(label: string) => label}
             />
             <Line type="monotone" dataKey="value" stroke={displayColor} strokeWidth={2} dot={false} />
           </LineChart>
@@ -103,7 +104,7 @@ export default function EnvironmentMonitor() {
     try {
       const wh = realtimeData[selectedIdx]
       if (!wh) return
-      const data = await api.getEnvironmentHistory({ warehouseId: wh.warehouseId, hours: '24' })
+      const data = await api.getEnvironmentHistory(wh.warehouseId, 24)
       setHistoryData(data)
     } catch {
       setHistoryData([])
@@ -154,14 +155,17 @@ export default function EnvironmentMonitor() {
     return value < t.min_value || value > t.max_value
   }
 
-  const getMetricHistory = (key: MetricKey): { value: number }[] => {
+  const getMetricHistory = (key: MetricKey): { value: number; time: string }[] => {
     const fieldMap: Record<MetricKey, keyof EnvironmentData> = {
       temperature: 'temperature',
       humidity: 'humidity',
       lightIntensity: 'light_intensity',
       harmfulGas: 'harmful_gas',
     }
-    return historyData.map(d => ({ value: Number(d[fieldMap[key]]) }))
+    return historyData.map(d => ({
+      value: Number(d[fieldMap[key]]),
+      time: d.recorded_at ? new Date(d.recorded_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '',
+    }))
   }
 
   if (loading) {

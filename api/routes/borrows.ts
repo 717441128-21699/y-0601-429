@@ -28,9 +28,13 @@ router.get('/', (req: Request, res: Response): void => {
 
     const borrows = db.prepare(
       `SELECT b.*, a.title as archive_title, a.archive_number, a.secrecy_level,
+              a.warehouse_id, a.shelf_id,
+              w.name as warehouse_name, s.code as shelf_code, s.position as shelf_position,
               u.name as user_name, u.department as user_department, u.permission_level
        FROM borrows b
        LEFT JOIN archives a ON b.archive_id = a.id
+       LEFT JOIN warehouses w ON a.warehouse_id = w.id
+       LEFT JOIN shelves s ON a.shelf_id = s.id
        LEFT JOIN users u ON b.user_id = u.id
        ${where}
        ORDER BY b.created_at DESC`
@@ -57,8 +61,13 @@ router.post('/', (req: Request, res: Response): void => {
       return
     }
 
-    if (archive.status !== '在库') {
+    if (!appointmentTime && archive.status !== '在库') {
       res.status(400).json({ success: false, error: `档案当前状态为${archive.status}，无法借阅` })
+      return
+    }
+
+    if (archive.status === '借出') {
+      res.status(400).json({ success: false, error: '档案已借出，无法预约' })
       return
     }
 
@@ -85,10 +94,29 @@ router.post('/', (req: Request, res: Response): void => {
     const userPermLevel = permissionMap[user.permission_level] || 2
     const archiveSecrecyLevel = secrecyMap[archive.secrecy_level] || 1
 
+    let hasConflict = false
+    if (appointmentTime && expectedReturnDate) {
+      const conflict = db.prepare(
+        `SELECT COUNT(*) as count FROM borrows
+         WHERE archive_id = ?
+           AND status IN ('已通过', '借出中', '待审批')
+           AND appointment_time IS NOT NULL
+           AND expected_return IS NOT NULL
+           AND NOT (
+             datetime(expected_return) <= datetime(?)
+             OR datetime(appointment_time) >= datetime(?)
+           )`
+      ).get(archiveId, appointmentTime, expectedReturnDate) as any
+      hasConflict = conflict.count > 0
+    }
+
     let status: string
     let approvalResult: string
 
-    if (userPermLevel >= archiveSecrecyLevel && archive.secrecy_level !== '机密') {
+    if (hasConflict) {
+      status = '待审批'
+      approvalResult = '预约时间冲突，需人工审批'
+    } else if (userPermLevel >= archiveSecrecyLevel && archive.secrecy_level !== '机密') {
       status = '已通过'
       approvalResult = '自动审批通过'
     } else if (userPermLevel < archiveSecrecyLevel) {
@@ -107,7 +135,7 @@ router.post('/', (req: Request, res: Response): void => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
       ).run(id, archiveId, userId, purpose || null, borrowType, appointmentTime || null, expectedReturnDate || null, status, approvalResult)
 
-      if (status === '已通过') {
+      if (status === '已通过' && !appointmentTime) {
         db.prepare("UPDATE archives SET status = '锁定' WHERE id = ?").run(archiveId)
       }
     })
@@ -146,7 +174,9 @@ router.put('/:id/approve', (req: Request, res: Response): void => {
     const update = db.transaction(() => {
       if (approved) {
         db.prepare("UPDATE borrows SET status = '已通过', approval_result = '人工审批通过' WHERE id = ?").run(req.params.id)
-        db.prepare("UPDATE archives SET status = '锁定' WHERE id = ?").run(borrow.archive_id)
+        if (!borrow.appointment_time) {
+          db.prepare("UPDATE archives SET status = '锁定' WHERE id = ?").run(borrow.archive_id)
+        }
       } else {
         db.prepare("UPDATE borrows SET status = '已拒绝', approval_result = '人工审批拒绝' WHERE id = ?").run(req.params.id)
       }
@@ -155,9 +185,13 @@ router.put('/:id/approve', (req: Request, res: Response): void => {
     update()
 
     const updated = db.prepare(
-      `SELECT b.*, a.title as archive_title, a.archive_number
+      `SELECT b.*, a.title as archive_title, a.archive_number,
+              a.warehouse_id, a.shelf_id,
+              w.name as warehouse_name, s.code as shelf_code, s.position as shelf_position
        FROM borrows b
        LEFT JOIN archives a ON b.archive_id = a.id
+       LEFT JOIN warehouses w ON a.warehouse_id = w.id
+       LEFT JOIN shelves s ON a.shelf_id = s.id
        WHERE b.id = ?`
     ).get(req.params.id)
 
@@ -193,9 +227,13 @@ router.post('/:id/return', (req: Request, res: Response): void => {
     update()
 
     const updated = db.prepare(
-      `SELECT b.*, a.title as archive_title, a.archive_number
+      `SELECT b.*, a.title as archive_title, a.archive_number,
+              a.warehouse_id, a.shelf_id,
+              w.name as warehouse_name, s.code as shelf_code, s.position as shelf_position
        FROM borrows b
        LEFT JOIN archives a ON b.archive_id = a.id
+       LEFT JOIN warehouses w ON a.warehouse_id = w.id
+       LEFT JOIN shelves s ON a.shelf_id = s.id
        WHERE b.id = ?`
     ).get(req.params.id)
 
@@ -209,9 +247,13 @@ router.get('/overdue', (req: Request, res: Response): void => {
   try {
     const overdueBorrows = db.prepare(
       `SELECT b.*, a.title as archive_title, a.archive_number, a.secrecy_level,
+              a.warehouse_id, a.shelf_id,
+              w.name as warehouse_name, s.code as shelf_code, s.position as shelf_position,
               u.name as user_name, u.department as user_department
        FROM borrows b
        LEFT JOIN archives a ON b.archive_id = a.id
+       LEFT JOIN warehouses w ON a.warehouse_id = w.id
+       LEFT JOIN shelves s ON a.shelf_id = s.id
        LEFT JOIN users u ON b.user_id = u.id
        WHERE b.status IN ('已超期', '借出中')
          AND b.expected_return IS NOT NULL

@@ -124,6 +124,7 @@ db.exec(`
     type TEXT NOT NULL,
     description TEXT,
     team_id TEXT REFERENCES maintenance_teams(id),
+    priority TEXT DEFAULT '中',
     status TEXT DEFAULT '待处理' CHECK(status IN ('待处理','进行中','已完成')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     completed_at DATETIME
@@ -154,5 +155,15 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_equipment_warehouse ON equipment(warehouse_id);
   CREATE INDEX IF NOT EXISTS idx_maintenance_status ON maintenance_orders(status);
 `)
+
+try {
+  db.prepare('ALTER TABLE maintenance_orders ADD COLUMN priority TEXT DEFAULT "中"').run()
+} catch {
+}
+
+try {
+  db.prepare('ALTER TABLE maintenance_orders ADD COLUMN spare_parts_used TEXT').run()
+} catch {
+}
 
 export default db

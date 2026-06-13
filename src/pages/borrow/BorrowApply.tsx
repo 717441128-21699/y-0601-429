@@ -88,20 +88,20 @@ export default function BorrowApply() {
           {result.autoApproved ? (
             <>
               <CheckCircle className="w-16 h-16 text-success mx-auto mb-4" />
-              <h3 className="text-heading text-lg mb-2">申请已通过</h3>
-              <p className="text-body mb-2">{result.approvalResult}</p>
+              <h3 className="text-heading text-lg mb-2">自动通过</h3>
+              <p className="text-body mb-2">{result.approvalResult || '您的借阅申请已自动通过审批'}</p>
             </>
           ) : result.status === '已拒绝' ? (
             <>
               <XCircle className="w-16 h-16 text-danger mx-auto mb-4" />
-              <h3 className="text-heading text-lg mb-2">申请已拒绝</h3>
-              <p className="text-body mb-2">{result.approvalResult}</p>
+              <h3 className="text-heading text-lg mb-2">已拒绝</h3>
+              <p className="text-body mb-2">{result.approvalResult || '您的借阅申请未通过审批'}</p>
             </>
           ) : (
             <>
               <Clock className="w-16 h-16 text-warning mx-auto mb-4" />
-              <h3 className="text-heading text-lg mb-2">等待审批</h3>
-              <p className="text-body mb-2">您的借阅申请已提交，等待管理员审批</p>
+              <h3 className="text-heading text-lg mb-2">待人工审批</h3>
+              <p className="text-body mb-2">{result.approvalResult || '您的借阅申请已提交，等待管理员审批'}</p>
             </>
           )}
           <button className="btn-primary mt-4" onClick={handleReset}>继续申请</button>

@@ -12,6 +12,7 @@ import archiveRoutes from './routes/archives.js'
 import borrowRoutes from './routes/borrows.js'
 import environmentRoutes from './routes/environment.js'
 import equipmentRoutes from './routes/equipment.js'
+import { autoTriggerMaintenance } from './routes/equipment.js'
 import statisticsRoutes from './routes/statistics.js'
 import warehouseRoutes from './routes/warehouses.js'
 import { seedDatabase } from './seed.js'
@@ -22,6 +23,7 @@ const __dirname = path.dirname(__filename)
 dotenv.config()
 
 seedDatabase()
+autoTriggerMaintenance()
 
 const app: express.Application = express()
 

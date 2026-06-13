@@ -5,6 +5,9 @@ import {
 } from 'recharts'
 import { api } from '@/lib/api'
 import type { UtilizationStats, WarehouseCapacityItem } from '@/types/api'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
 
 const PIE_COLORS = ['var(--color-accent)', 'var(--color-success)']
 
@@ -40,9 +43,144 @@ export default function StatisticsUtilization() {
     setTimeout(() => setToast(''), 3000)
   }
 
+  const exportPDF = () => {
+    if (!utilData) return
+
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+
+    doc.setFontSize(18)
+    const title = '档案馆月度运行报告'
+    const titleWidth = doc.getTextWidth(title)
+    doc.text(title, (pageWidth - titleWidth) / 2, 25)
+
+    doc.setFontSize(10)
+    const monthText = `统计月份：${exportMonth}`
+    doc.text(monthText, 14, 35)
+
+    const basicData = [
+      ['总档案数', utilData.totalArchives.toString()],
+      ['借出数', utilData.borrowedArchives.toString()],
+      ['在库数', utilData.inStockArchives.toString()],
+      ['利用率', `${utilData.utilizationRate.toFixed(1)}%`],
+    ]
+
+    autoTable(doc, {
+      head: [['指标', '数值']],
+      body: basicData,
+      startY: 45,
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [59, 130, 246] },
+      theme: 'grid',
+      tableWidth: 80,
+      margin: { left: 14 },
+    })
+
+    const typeRows = utilData.typeStats.map(ts => [
+      ts.type,
+      ts.total.toString(),
+      ts.borrowed.toString(),
+      ts.in_stock.toString(),
+      `${(ts.total > 0 ? (ts.borrowed / ts.total) * 100 : 0).toFixed(1)}%`,
+    ])
+
+    const yAfterBasic = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
+
+    doc.setFontSize(12)
+    doc.text('按类型统计', 14, yAfterBasic)
+
+    autoTable(doc, {
+      head: [['类型', '总计', '借出', '在库', '利用率']],
+      body: typeRows,
+      startY: yAfterBasic + 5,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [59, 130, 246] },
+      theme: 'grid',
+      margin: { left: 14, right: 14 },
+    })
+
+    const yAfterType = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
+
+    doc.setFontSize(12)
+    doc.text('库房容量统计', 14, yAfterType)
+
+    const capRows = capacityData.map(w => [
+      w.name,
+      w.capacity.toString(),
+      w.used.toString(),
+      `${w.usage_rate.toFixed(1)}%`,
+    ])
+
+    autoTable(doc, {
+      head: [['库房名称', '容量', '已用', '使用率']],
+      body: capRows,
+      startY: yAfterType + 5,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [59, 130, 246] },
+      theme: 'grid',
+      margin: { left: 14, right: 14 },
+    })
+
+    doc.save(`档案馆运行报告_${exportMonth}.pdf`)
+  }
+
+  const exportExcel = () => {
+    if (!utilData) return
+
+    const wb = XLSX.utils.book_new()
+
+    const basicData = [
+      ['指标', '数值'],
+      ['总档案数', utilData.totalArchives],
+      ['借出数', utilData.borrowedArchives],
+      ['在库数', utilData.inStockArchives],
+      ['利用率', `${utilData.utilizationRate.toFixed(1)}%`],
+      ['统计月份', exportMonth],
+    ]
+    const ws1 = XLSX.utils.aoa_to_sheet(basicData)
+    XLSX.utils.book_append_sheet(wb, ws1, '基本指标')
+
+    const typeData = [
+      ['类型', '总计', '借出', '在库', '利用率'],
+      ...utilData.typeStats.map(ts => [
+        ts.type,
+        ts.total,
+        ts.borrowed,
+        ts.in_stock,
+        `${(ts.total > 0 ? (ts.borrowed / ts.total) * 100 : 0).toFixed(1)}%`,
+      ]),
+    ]
+    const ws2 = XLSX.utils.aoa_to_sheet(typeData)
+    XLSX.utils.book_append_sheet(wb, ws2, '类型统计')
+
+    const capData = [
+      ['库房名称', '位置', '容量', '已用', '使用率'],
+      ...capacityData.map(w => [
+        w.name,
+        w.location,
+        w.capacity,
+        w.used,
+        `${w.usage_rate.toFixed(1)}%`,
+      ]),
+    ]
+    const ws3 = XLSX.utils.aoa_to_sheet(capData)
+    XLSX.utils.book_append_sheet(wb, ws3, '库容统计')
+
+    XLSX.writeFile(wb, `档案馆运行报告_${exportMonth}.xlsx`)
+  }
+
   const handleExport = () => {
     setShowExport(false)
-    showToast('报告生成中...')
+    try {
+      if (exportFormat === 'pdf') {
+        exportPDF()
+      } else {
+        exportExcel()
+      }
+      showToast('报告导出成功')
+    } catch {
+      showToast('报告导出失败')
+    }
   }
 
   if (loading || !utilData) {

@@ -67,6 +67,9 @@ export interface Borrow {
   status: '待审批' | '已通过' | '已拒绝' | '借出中' | '已归还' | '已超期'
   approval_result: string | null
   overdue_fee: number
+  warehouse_name: string | null
+  shelf_code: string | null
+  shelf_position: string | null
   created_at: string
 }
 

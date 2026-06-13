@@ -157,20 +157,21 @@ export default function BorrowApproval() {
 
       {pickupModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setPickupModal(null)}>
-          <div className="card-base p-6 w-[400px] animate-card-enter" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center">
-                <MapPin className="w-5 h-5 text-accent" />
+          <div className="card-base p-6 w-[420px] animate-card-enter" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center">
+                <MapPin className="w-6 h-6 text-accent" />
               </div>
               <div>
-                <h3 className="text-heading text-base">取卷通知</h3>
+                <h3 className="text-heading text-lg">取卷通知</h3>
                 <p className="text-text-muted text-xs">请前往以下位置取卷</p>
               </div>
             </div>
-            <div className="bg-surface rounded-lg p-4 space-y-2">
+
+            <div className="bg-surface rounded-lg p-4 space-y-3 mb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-text-muted">档案标题</span>
-                <span className="text-text-primary">{pickupModal.archive_title}</span>
+                <span className="text-text-primary font-medium">{pickupModal.archive_title}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-text-muted">档号</span>
@@ -180,13 +181,32 @@ export default function BorrowApproval() {
                 <span className="text-text-muted">借阅人</span>
                 <span className="text-text-primary">{pickupModal.user_name}</span>
               </div>
-              <div className="h-px bg-border" />
               <div className="flex justify-between text-sm">
                 <span className="text-text-muted">预约时间</span>
                 <span className="text-text-primary">{pickupModal.appointment_time?.slice(0, 16).replace('T', ' ') || '待定'}</span>
               </div>
             </div>
-            <button className="btn-primary w-full mt-4" onClick={() => setPickupModal(null)}>知道了</button>
+
+            <div className="bg-accent/5 border border-accent/20 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-2">
+                <MapPin className="w-4 h-4 text-accent" />
+                <span className="text-sm font-medium text-text-primary">取卷位置</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">库房名称</span>
+                <span className="text-text-primary font-medium">{pickupModal.warehouse_name || '-'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">密集架号</span>
+                <span className="text-text-primary font-medium">{pickupModal.shelf_code || '-'}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">具体位置</span>
+                <span className="text-text-primary font-medium">{pickupModal.shelf_position || '-'}</span>
+              </div>
+            </div>
+
+            <button className="btn-primary w-full mt-5" onClick={() => setPickupModal(null)}>知道了</button>
           </div>
         </div>
       )}
