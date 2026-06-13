@@ -206,7 +206,7 @@ function buildSummary(startDate: string, endDate: string) {
     `SELECT COUNT(*) as count
      FROM borrows
      WHERE created_at >= ? AND created_at <= ?
-       AND status IN ('已通过', '借出中', '已归还', '已超期')`
+       AND status IN ('已通过', '待取卷', '借出中', '已归还', '已超期')`
   ).get(startDate, endDate) as any
 
   const monthPending = db.prepare(
@@ -291,7 +291,7 @@ router.get('/monthly-report', (req: Request, res: Response): void => {
     const borrowingTrend = db.prepare(
       `SELECT strftime('%Y-%m-%d', created_at) as date,
               COUNT(*) as count,
-              SUM(CASE WHEN status IN ('已通过','借出中','已归还','已超期') THEN 1 ELSE 0 END) as approved
+              SUM(CASE WHEN status IN ('已通过','待取卷','借出中','已归还','已超期') THEN 1 ELSE 0 END) as approved
        FROM borrows
        WHERE created_at >= ? AND created_at <= ?
        GROUP BY strftime('%Y-%m-%d', created_at)
@@ -309,7 +309,7 @@ router.get('/monthly-report', (req: Request, res: Response): void => {
     const borrowByDepartment = db.prepare(
       `SELECT u.department as department,
               COUNT(*) as count,
-              SUM(CASE WHEN b.status IN ('已通过','借出中','已归还','已超期') THEN 1 ELSE 0 END) as approved
+              SUM(CASE WHEN b.status IN ('已通过','待取卷','借出中','已归还','已超期') THEN 1 ELSE 0 END) as approved
        FROM borrows b
        LEFT JOIN users u ON b.user_id = u.id
        WHERE b.created_at >= ? AND b.created_at <= ?
@@ -326,7 +326,7 @@ router.get('/monthly-report', (req: Request, res: Response): void => {
                 LEFT JOIN archives a ON b.archive_id = a.id
                 WHERE a.warehouse_id = w.id
                   AND b.created_at >= ? AND b.created_at <= ?
-                  AND b.status IN ('已通过','借出中','已归还','已超期')
+                  AND b.status IN ('已通过','待取卷','借出中','已归还','已超期')
               ) as month_borrow_count
        FROM warehouses w
        ORDER BY w.name`
@@ -352,7 +352,7 @@ router.get('/monthly-report', (req: Request, res: Response): void => {
                 FROM borrows b
                 WHERE b.archive_id IN (SELECT id FROM archives WHERE type = a.type)
                   AND b.created_at >= ? AND b.created_at <= ?
-                  AND b.status IN ('已通过','借出中','已归还','已超期')
+                  AND b.status IN ('已通过','待取卷','借出中','已归还','已超期')
               ) as month_borrowed
        FROM archives a
        GROUP BY a.type
@@ -381,6 +381,35 @@ router.get('/monthly-report', (req: Request, res: Response): void => {
     })
   } catch (error) {
     res.status(500).json({ success: false, error: '获取月度报告失败' })
+  }
+})
+
+router.get('/monthly-comparison', (req: Request, res: Response): void => {
+  try {
+    const months = Math.min(Math.max(parseInt(req.query.months as string) || 6, 3), 12)
+    const now = new Date()
+    const result = []
+
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const startDate = `${month}-01T00:00:00.000Z`
+      const endDate = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59).toISOString()
+      const summary = buildSummary(startDate, endDate)
+      const approvalRate = summary.monthBorrows > 0
+        ? Math.round((summary.monthApproved / summary.monthBorrows) * 1000) / 10
+        : 0
+
+      result.push({
+        month,
+        ...summary,
+        approvalRate,
+      })
+    }
+
+    res.json({ success: true, data: result })
+  } catch (error) {
+    res.status(500).json({ success: false, error: '获取多月对比数据失败' })
   }
 })
 

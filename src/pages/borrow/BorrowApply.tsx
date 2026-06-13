@@ -259,7 +259,9 @@ export default function BorrowApply() {
                     <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                     <p className="text-xs text-text-secondary">
                       档案当前状态为 <span className="text-warning font-medium">{selected.status}</span>，
-                      可通过预约时间选择未来时段借阅
+                      {selected.status === '借出'
+                        ? '档案借出中，请填写预约时间选择未来时段借阅'
+                        : '可通过预约时间选择未来时段借阅'}
                     </p>
                   </div>
                 )}
@@ -267,10 +269,10 @@ export default function BorrowApply() {
                 <button
                   className="btn-primary w-full"
                   onClick={handleSubmit}
-                  disabled={loading || !form.purpose || !currentUser || selected.status === '借出'}
+                  disabled={loading || !form.purpose || !currentUser}
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {selected.status === '借出' ? '档案已借出，无法预约' : '提交申请'}
+                  提交申请
                 </button>
               </div>
             ) : (

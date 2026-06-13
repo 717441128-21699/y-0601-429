@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  BarChart3, Download, TrendingUp, FileWarning, Warehouse, Calendar, ChevronLeft, ChevronRight,
+  BarChart3, Download, TrendingUp, FileWarning, Warehouse, Calendar, ChevronLeft, ChevronRight, BarChartHorizontal,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -19,6 +19,7 @@ export default function StatisticsUtilization() {
   const [loading, setLoading] = useState(true)
   const [exportMonth, setExportMonth] = useState(new Date().toISOString().slice(0, 7))
   const [toast, setToast] = useState('')
+  const [comparisonData, setComparisonData] = useState<any[]>([])
 
   useEffect(() => {
     const fetch = async () => {
@@ -34,6 +35,12 @@ export default function StatisticsUtilization() {
     }
     fetch()
   }, [exportMonth])
+
+  useEffect(() => {
+    api.getMonthlyComparison(6)
+      .then(setComparisonData)
+      .catch(() => setComparisonData([]))
+  }, [])
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -567,6 +574,61 @@ export default function StatisticsUtilization() {
           </table>
         </div>
       </div>
+
+      {comparisonData.length > 0 && (
+        <div className="card-base p-5">
+          <h3 className="text-heading text-sm mb-4 flex items-center gap-1.5">
+            <BarChartHorizontal className="w-4 h-4 text-accent" />
+            近6月趋势对比
+          </h3>
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={comparisonData.map(d => ({
+                ...d,
+                month: d.month.length >= 7 ? `${d.month.slice(0, 4)}-${d.month.slice(5, 7)}` : d.month,
+              }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-card)" />
+                <XAxis dataKey="month" stroke="var(--color-text-muted)" fontSize={11} />
+                <YAxis stroke="var(--color-text-muted)" fontSize={11} />
+                <Tooltip
+                  contentStyle={{ background: 'var(--color-surface)', border: 'none', borderRadius: '8px', color: 'var(--color-text-primary)' }}
+                  cursor={{ fill: 'rgba(212, 168, 67, 0.05)' }}
+                />
+                <Legend />
+                <Bar dataKey="monthBorrows" name="申请量" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="monthApproved" name="通过量" fill="#D4A843" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="monthOverdueCount" name="逾期量" fill="#EF4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="overflow-x-auto mt-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="table-header">
+                  <th className="px-4 py-3 text-left">月份</th>
+                  <th className="px-4 py-3 text-left">申请量</th>
+                  <th className="px-4 py-3 text-left">通过量</th>
+                  <th className="px-4 py-3 text-left">通过率</th>
+                  <th className="px-4 py-3 text-left">逾期数</th>
+                  <th className="px-4 py-3 text-left">逾期费用</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonData.map((d, i) => (
+                  <tr key={i} className="table-row">
+                    <td className="px-4 py-3 text-text-primary font-medium">{d.month.length >= 7 ? `${d.month.slice(0, 4)}-${d.month.slice(5, 7)}` : d.month}</td>
+                    <td className="px-4 py-3 text-text-secondary">{d.monthBorrows}</td>
+                    <td className="px-4 py-3 text-text-secondary">{d.monthApproved}</td>
+                    <td className="px-4 py-3 text-accent">{d.approvalRate != null ? `${d.approvalRate.toFixed(1)}%` : '-'}</td>
+                    <td className="px-4 py-3 text-text-secondary">{d.monthOverdueCount}</td>
+                    <td className="px-4 py-3 text-text-secondary">¥{d.monthOverdueFee.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

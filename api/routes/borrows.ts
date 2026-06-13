@@ -368,7 +368,7 @@ router.get('/appointments/:archiveId', (req: Request, res: Response): void => {
        FROM borrows b
        LEFT JOIN users u ON b.user_id = u.id
        WHERE b.archive_id = ?
-         AND b.status IN ('待审批', '已通过', '借出中')
+         AND b.status IN ('待审批', '已通过', '待取卷', '借出中')
          AND b.appointment_time IS NOT NULL
        ORDER BY b.appointment_time ASC`
     ).all(archiveId)

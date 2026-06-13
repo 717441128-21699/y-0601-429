@@ -237,6 +237,16 @@ export default function BorrowRecords() {
                     </td>
                     <td className="px-4 py-3 text-text-muted text-xs">{b.expected_return?.slice(0, 10) || '-'}</td>
                     <td className="px-4 py-3">
+                      {b.status === '已通过' && b.appointment_time && new Date(b.appointment_time) <= new Date() && isAdmin && (
+                        <button
+                          className="btn-primary text-xs !px-2 !py-1 mr-1"
+                          onClick={() => handleConfirmPickup(b.id)}
+                          disabled={actionLoading === b.id}
+                        >
+                          {actionLoading === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <PackageCheck className="w-3 h-3" />}
+                          确认取卷
+                        </button>
+                      )}
                       {b.status === '待取卷' && isAdmin && (
                         <button
                           className="btn-primary text-xs !px-2 !py-1 mr-1"

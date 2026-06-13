@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckSquare, Check, X, MapPin, Loader2, Calendar, User, FileText, AlertTriangle } from 'lucide-react'
+import { CheckSquare, Check, X, MapPin, Loader2, Calendar, User, FileText, AlertTriangle, PackageCheck } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Borrow, AppointmentItem } from '@/types/api'
 
@@ -7,6 +7,7 @@ const TABS = [
   { key: '', label: '全部' },
   { key: '待审批', label: '待审批' },
   { key: '已通过', label: '已通过' },
+  { key: '待取卷', label: '待取卷' },
   { key: '已拒绝', label: '已拒绝' },
 ]
 
@@ -74,6 +75,18 @@ export default function BorrowApproval() {
     }
   }
 
+  const handleConfirmPickup = async (id: string) => {
+    setActionLoading(id)
+    try {
+      await api.confirmPickup(id)
+      await fetchData()
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : '操作失败')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   const STATUS_BADGE: Record<string, string> = {
     '待审批': 'badge-warning',
     '已通过': 'badge-success',
@@ -125,6 +138,97 @@ export default function BorrowApproval() {
         other.appointment_time &&
         other.expected_return &&
         isTimeOverlap(b.appointment_time, b.expected_return, other.appointment_time, other.expected_return)
+    )
+  }
+
+  const renderTimeline = () => {
+    const allAppts = [
+      {
+        id: detailModal!.id,
+        appointment_time: detailModal!.appointment_time!,
+        expected_return: detailModal!.expected_return!,
+        status: detailModal!.status,
+        user_name: detailModal!.user_name,
+      },
+      ...appointments.filter(a => a.appointment_time && a.expected_return).map(a => ({
+        id: a.id,
+        appointment_time: a.appointment_time,
+        expected_return: a.expected_return,
+        status: a.status,
+        user_name: a.user_name,
+      })),
+    ].filter(a => a.appointment_time && a.expected_return)
+
+    if (allAppts.length === 0) return null
+
+    const times = allAppts.flatMap(a => [new Date(a.appointment_time).getTime(), new Date(a.expected_return).getTime()])
+    const minTime = Math.min(...times)
+    const maxTime = Math.max(...times)
+    const totalSpan = maxTime - minTime || 1
+
+    const getColor = (s: string) => {
+      switch (s) {
+        case '待审批': return '#F59E0B'
+        case '已通过': return '#10B981'
+        case '待取卷': return '#8B5CF6'
+        case '借出中': return '#3B82F6'
+        default: return '#6B7280'
+      }
+    }
+
+    const hasOverlap = (idx: number) => {
+      const a = allAppts[idx]
+      return allAppts.some((b, j) =>
+        j !== idx &&
+        new Date(b.appointment_time).getTime() < new Date(a.expected_return).getTime() &&
+        new Date(b.expected_return).getTime() > new Date(a.appointment_time).getTime()
+      )
+    }
+
+    return (
+      <div className="mb-4">
+        <p className="text-xs text-text-muted mb-2">预约排班视图</p>
+        <div className="bg-surface rounded-lg p-3 space-y-1.5">
+          <div className="relative flex text-[10px] text-text-muted mb-1 px-1 h-4">
+            <span>{new Date(minTime).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</span>
+            <span className="ml-auto">{new Date(maxTime).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })}</span>
+          </div>
+          {allAppts.map((a, i) => {
+            const start = ((new Date(a.appointment_time).getTime() - minTime) / totalSpan) * 100
+            const end = ((new Date(a.expected_return).getTime() - minTime) / totalSpan) * 100
+            const width = Math.max(end - start, 2)
+            const overlap = hasOverlap(i)
+            return (
+              <div key={a.id} className="relative h-6">
+                <div
+                  className={`absolute top-0.5 h-5 rounded flex items-center px-1.5 text-[11px] text-white font-medium truncate ${overlap ? 'ring-2 ring-danger' : ''}`}
+                  style={{ left: `${start}%`, width: `${width}%`, minWidth: '60px', backgroundColor: getColor(a.status) }}
+                  title={`${a.user_name} ${formatApptRange(a.appointment_time, a.expected_return)}`}
+                >
+                  {a.user_name}
+                </div>
+              </div>
+            )
+          })}
+          <div className="flex items-center gap-3 mt-2 pt-2 border-t border-card">
+            {[
+              { label: '待审批', color: '#F59E0B' },
+              { label: '已通过', color: '#10B981' },
+              { label: '待取卷', color: '#8B5CF6' },
+              { label: '借出中', color: '#3B82F6' },
+            ].map(l => (
+              <div key={l.label} className="flex items-center gap-1">
+                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: l.color }} />
+                <span className="text-[10px] text-text-muted">{l.label}</span>
+              </div>
+            ))}
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-sm border-2 border-danger bg-transparent" />
+              <span className="text-[10px] text-text-muted">时间冲突</span>
+            </div>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -232,8 +336,36 @@ export default function BorrowApproval() {
                             <MapPin className="w-3 h-3" />
                             取卷通知
                           </button>
+                          {b.appointment_time && new Date(b.appointment_time) <= new Date() && (
+                            <button
+                              className="btn-primary text-xs !px-3 !py-1"
+                              onClick={() => handleConfirmPickup(b.id)}
+                              disabled={actionLoading === b.id}
+                            >
+                              {actionLoading === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <PackageCheck className="w-3 h-3" />}
+                              确认取卷
+                            </button>
+                          )}
                           <button
                             className="btn-ghost text-xs !px-3 !py-1"
+                            onClick={() => openDetail(b)}
+                          >
+                            <FileText className="w-3 h-3" />
+                            详情
+                          </button>
+                        </div>
+                      ) : b.status === '待取卷' ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="btn-primary text-xs !px-3 !py-1"
+                            onClick={() => handleConfirmPickup(b.id)}
+                            disabled={actionLoading === b.id}
+                          >
+                            {actionLoading === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <PackageCheck className="w-3 h-3" />}
+                            确认取卷
+                          </button>
+                          <button
+                            className="btn-secondary text-xs !px-3 !py-1"
                             onClick={() => openDetail(b)}
                           >
                             <FileText className="w-3 h-3" />
@@ -360,6 +492,7 @@ export default function BorrowApproval() {
             </div>
 
             <div className="border-t border-card pt-4">
+              {renderTimeline()}
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-heading text-sm flex items-center gap-1.5">
                   <Calendar className="w-4 h-4 text-accent" />
@@ -423,6 +556,48 @@ export default function BorrowApproval() {
                 >
                   <X className="w-4 h-4" />
                   拒绝
+                </button>
+              </div>
+            )}
+            {detailModal.status === '待取卷' && (
+              <div className="flex items-center gap-3 mt-5 pt-5 border-t border-card">
+                <button
+                  className="btn-primary flex-1"
+                  onClick={() => {
+                    handleConfirmPickup(detailModal.id)
+                    setDetailModal(null)
+                  }}
+                  disabled={actionLoading === detailModal.id}
+                >
+                  {actionLoading === detailModal.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+                  确认取卷
+                </button>
+                <button
+                  className="btn-secondary flex-1"
+                  onClick={() => { setDetailModal(null); setAppointments([]) }}
+                >
+                  关闭
+                </button>
+              </div>
+            )}
+            {detailModal.status === '已通过' && detailModal.appointment_time && new Date(detailModal.appointment_time) <= new Date() && (
+              <div className="flex items-center gap-3 mt-5 pt-5 border-t border-card">
+                <button
+                  className="btn-primary flex-1"
+                  onClick={() => {
+                    handleConfirmPickup(detailModal.id)
+                    setDetailModal(null)
+                  }}
+                  disabled={actionLoading === detailModal.id}
+                >
+                  {actionLoading === detailModal.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+                  确认取卷
+                </button>
+                <button
+                  className="btn-secondary flex-1"
+                  onClick={() => { setDetailModal(null); setAppointments([]) }}
+                >
+                  关闭
                 </button>
               </div>
             )}

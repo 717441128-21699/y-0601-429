@@ -179,4 +179,9 @@ export const api = {
 
   getArchiveAppointments: (archiveId: string) =>
     request<AppointmentItem[]>(`/borrows/appointments/${archiveId}`),
+
+  getMonthlyComparison: (months?: number) => {
+    const query = months ? `?months=${months}` : ''
+    return request<{ month: string; monthBorrows: number; monthApproved: number; monthPending: number; monthRejected: number; monthOverdueCount: number; monthOverdueFee: number; approvalRate: number }[]>(`/statistics/monthly-comparison${query}`)
+  },
 }
