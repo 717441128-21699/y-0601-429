@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
-import { History, AlertTriangle, Bell, RotateCcw, Loader2 } from 'lucide-react'
+import { History, AlertTriangle, Bell, RotateCcw, Loader2, PackageCheck } from 'lucide-react'
 import { api } from '@/lib/api'
+import useAppStore from '@/stores/useAppStore'
 import type { Borrow } from '@/types/api'
 
 const TABS = [
   { key: '', label: '全部' },
+  { key: '待取卷', label: '待取卷' },
   { key: '借出中', label: '借出中' },
   { key: '已归还', label: '已归还' },
   { key: '已超期', label: '已超期' },
@@ -13,6 +15,7 @@ const TABS = [
 const STATUS_BADGE: Record<string, string> = {
   '待审批': 'badge-warning',
   '已通过': 'badge-success',
+  '待取卷': 'badge-accent',
   '已拒绝': 'badge-danger',
   '借出中': 'badge-accent',
   '已归还': 'badge-success',
@@ -26,11 +29,13 @@ export default function BorrowRecords() {
   const [activeTab, setActiveTab] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [remindMsg, setRemindMsg] = useState<string | null>(null)
+  const currentUser = useAppStore((s) => s.currentUser)
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === '系统管理员'
 
   const fetchOverdue = async () => {
     try {
       const res = await api.getOverdueBorrows()
-      setOverdueList(res)
+      setOverdueList(isAdmin ? res : res.filter((b) => b.user_id === currentUser.id))
     } catch {
       setOverdueList([])
     }
@@ -41,6 +46,7 @@ export default function BorrowRecords() {
     try {
       const params: Record<string, string> = {}
       if (status) params.status = status
+      if (!isAdmin) params.userId = currentUser.id
       const res = await api.getBorrows(params)
       setBorrows(res)
     } catch {
@@ -54,7 +60,7 @@ export default function BorrowRecords() {
     fetchOverdue()
     fetchBorrows()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [currentUser.id])
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab)
@@ -71,6 +77,20 @@ export default function BorrowRecords() {
     } catch (e: unknown) {
       setRemindMsg(e instanceof Error ? e.message : '催还失败')
       setTimeout(() => setRemindMsg(null), 3000)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleConfirmPickup = async (id: string) => {
+    setActionLoading(id)
+    try {
+      await api.confirmPickup(id)
+      fetchBorrows()
+      setRemindMsg('已确认取卷，档案进入借出中状态')
+      setTimeout(() => setRemindMsg(null), 3000)
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : '确认取卷失败')
     } finally {
       setActionLoading(null)
     }
@@ -217,7 +237,17 @@ export default function BorrowRecords() {
                     </td>
                     <td className="px-4 py-3 text-text-muted text-xs">{b.expected_return?.slice(0, 10) || '-'}</td>
                     <td className="px-4 py-3">
-                      {['已通过', '借出中', '已超期'].includes(b.status) && (
+                      {b.status === '待取卷' && isAdmin && (
+                        <button
+                          className="btn-primary text-xs !px-2 !py-1 mr-1"
+                          onClick={() => handleConfirmPickup(b.id)}
+                          disabled={actionLoading === b.id}
+                        >
+                          {actionLoading === b.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <PackageCheck className="w-3 h-3" />}
+                          确认取卷
+                        </button>
+                      )}
+                      {['已通过', '待取卷', '借出中', '已超期'].includes(b.status) && isAdmin && (
                         <button
                           className="btn-secondary text-xs !px-2 !py-1"
                           onClick={() => handleReturn(b.id)}
@@ -227,7 +257,7 @@ export default function BorrowRecords() {
                           归还
                         </button>
                       )}
-                      {b.status === '借出中' && (
+                      {b.status === '借出中' && isAdmin && (
                         <button
                           className="btn-danger text-xs !px-2 !py-1 ml-1"
                           onClick={() => handleRemind(b.id)}

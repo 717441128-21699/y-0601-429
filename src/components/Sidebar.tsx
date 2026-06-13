@@ -72,7 +72,8 @@ const navSections: NavSection[] = [
   {
     title: '统计分析',
     items: [
-      { label: '统计分析', icon: BarChart3, path: '/statistics/borrowing' },
+      { label: '月度报告', icon: BarChart3, path: '/statistics/utilization' },
+      { label: '借阅统计', icon: FileText, path: '/statistics/borrowing' },
       { label: '库房地图', icon: Map, path: '/warehouse/map' },
     ],
   },

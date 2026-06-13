@@ -64,7 +64,7 @@ export interface Borrow {
   appointment_time: string | null
   expected_return: string | null
   actual_return: string | null
-  status: '待审批' | '已通过' | '已拒绝' | '借出中' | '已归还' | '已超期'
+  status: '待审批' | '已通过' | '待取卷' | '已拒绝' | '借出中' | '已归还' | '已超期'
   approval_result: string | null
   overdue_fee: number
   warehouse_name: string | null
@@ -285,6 +285,14 @@ export interface MonthlyReportSummary {
 export interface MonthlyReport {
   month: string
   summary: MonthlyReportSummary
+  prevMonthSummary: MonthlyReportSummary | null
+  chainGrowth: {
+    borrowsChange: number
+    borrowsChangeRate: number
+    overdueCountChange: number
+    overdueFeeChange: number
+    approvalRateChange: number
+  } | null
   borrowingTrend: { date: string; count: number; approved: number }[]
   borrowByType: { type: string; count: number }[]
   borrowByDepartment: { department: string; count: number; approved: number }[]

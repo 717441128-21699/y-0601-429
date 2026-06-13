@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CheckSquare, Check, X, MapPin, Loader2, Calendar, User, FileText } from 'lucide-react'
+import { CheckSquare, Check, X, MapPin, Loader2, Calendar, User, FileText, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Borrow, AppointmentItem } from '@/types/api'
 
@@ -81,11 +81,51 @@ export default function BorrowApproval() {
     '借出中': 'badge-accent',
     '已归还': 'badge-success',
     '已超期': 'badge-danger',
+    '待取卷': 'badge-accent',
   }
 
   const formatDateTime = (iso?: string) => {
     if (!iso) return '-'
     return iso.slice(0, 16).replace('T', ' ')
+  }
+
+  const formatApptRange = (start?: string, end?: string) => {
+    if (!start || !end) return '-'
+    const fmt = (s: string) => {
+      const d = new Date(s)
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mi = String(d.getMinutes()).padStart(2, '0')
+      return `${mm}/${dd} ${hh}:${mi}`
+    }
+    return `${fmt(start)} ~ ${fmt(end)}`
+  }
+
+  const isTimeOverlap = (
+    aStart: string | undefined,
+    aEnd: string | undefined,
+    bStart: string | undefined,
+    bEnd: string | undefined,
+  ) => {
+    if (!aStart || !aEnd || !bStart || !bEnd) return false
+    const aS = new Date(aStart).getTime()
+    const aE = new Date(aEnd).getTime()
+    const bS = new Date(bStart).getTime()
+    const bE = new Date(bEnd).getTime()
+    return !(bE <= aS || bS >= aE)
+  }
+
+  const hasTableConflict = (b: Borrow, all: Borrow[]) => {
+    if (!b.appointment_time || !b.expected_return || !b.archive_id) return false
+    return all.some(
+      other =>
+        other.id !== b.id &&
+        other.archive_id === b.archive_id &&
+        other.appointment_time &&
+        other.expected_return &&
+        isTimeOverlap(b.appointment_time, b.expected_return, other.appointment_time, other.expected_return)
+    )
   }
 
   return (
@@ -150,7 +190,9 @@ export default function BorrowApproval() {
                       <p className="text-xs text-text-muted mt-0.5">{b.user_department}</p>
                     </td>
                     <td className="px-4 py-3 text-text-secondary">{b.borrow_type}</td>
-                    <td className="px-4 py-3 text-text-secondary text-xs">{b.appointment_time ? formatDateTime(b.appointment_time) : '-'}</td>
+                    <td className={`px-4 py-3 text-xs ${b.appointment_time && hasTableConflict(b, borrows) ? 'text-danger' : 'text-text-secondary'}`}>
+                      {b.appointment_time ? formatApptRange(b.appointment_time, b.expected_return) : '-'}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={STATUS_BADGE[b.status] || 'badge-accent'}>{b.status}</span>
                     </td>
@@ -329,18 +371,31 @@ export default function BorrowApproval() {
                 <p className="text-center text-text-muted text-sm py-4">无其他预约占用记录</p>
               ) : (
                 <div className="space-y-2 max-h-[240px] overflow-y-auto">
-                  {appointments.map((appt) => (
-                    <div key={appt.id} className="bg-surface rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs ${STATUS_BADGE[appt.status] || 'badge-accent'}`}>{appt.status}</span>
-                        <span className="text-xs text-text-muted">{appt.user_name} · {appt.user_department}</span>
+                  {appointments.map((appt) => {
+                    const overlap = isTimeOverlap(
+                      detailModal.appointment_time,
+                      detailModal.expected_return,
+                      appt.appointment_time,
+                      appt.expected_return,
+                    )
+                    return (
+                      <div
+                        key={appt.id}
+                        className={`bg-surface rounded-lg p-3 ${overlap ? 'border-l-4 border-danger pl-2' : ''}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="flex items-center">
+                            <span className={`text-xs ${STATUS_BADGE[appt.status] || 'badge-accent'}`}>{appt.status}</span>
+                            {overlap && <AlertTriangle className="w-3 h-3 text-danger inline ml-1" />}
+                          </span>
+                          <span className="text-xs text-text-muted">{appt.user_name} · {appt.user_department}</span>
+                        </div>
+                        <div className="text-xs text-text-secondary">
+                          <p>预约时段：{formatApptRange(appt.appointment_time, appt.expected_return)}</p>
+                        </div>
                       </div>
-                      <div className="text-xs text-text-secondary space-y-0.5">
-                        <p>预约：{formatDateTime(appt.appointment_time)}</p>
-                        <p>归还：{formatDateTime(appt.expected_return)}</p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

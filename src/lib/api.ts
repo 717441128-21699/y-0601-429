@@ -83,6 +83,9 @@ export const api = {
   returnBorrow: (id: string) =>
     request<Borrow>(`/borrows/${id}/return`, { method: 'POST' }),
 
+  confirmPickup: (id: string) =>
+    request<Borrow>(`/borrows/${id}/confirm-pickup`, { method: 'POST' }),
+
   getOverdueBorrows: () =>
     request<Borrow[]>('/borrows/overdue'),
 

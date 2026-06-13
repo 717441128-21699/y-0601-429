@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation, Link } from 'react-router-dom'
-import { ChevronRight, Bell, Menu, LogOut } from 'lucide-react'
+import { ChevronRight, Bell, Menu, LogOut, User, ChevronDown, Loader2 } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
 import useAppStore from '@/stores/useAppStore'
+import { api } from '@/lib/api'
+import type { User as UserType } from '@/types/api'
 
 const pathNameMap: Record<string, string> = {
   '/': '仪表盘',
@@ -42,7 +44,12 @@ export default function Layout() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar)
   const notifications = useAppStore((s) => s.notifications)
   const markNotificationRead = useAppStore((s) => s.markNotificationRead)
+  const currentUser = useAppStore((s) => s.currentUser)
+  const setCurrentUser = useAppStore((s) => s.setCurrentUser)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [userList, setUserList] = useState<UserType[]>([])
+  const [userLoading, setUserLoading] = useState(false)
 
   const unreadCount = notifications.filter((n) => !n.read).length
   const currentPath = location.pathname
@@ -51,7 +58,68 @@ export default function Layout() {
 
   useEffect(() => {
     setShowNotifications(false)
+    setShowUserMenu(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const list = await api.getUsers()
+        setUserList(list)
+        const defaultAdmin = list.find(u => u.role === 'admin' || u.role === '系统管理员')
+        if (currentUser.id === '1' && defaultAdmin) {
+          setCurrentUser({
+            id: defaultAdmin.id,
+            name: defaultAdmin.name,
+            role: defaultAdmin.role,
+            department: defaultAdmin.department,
+            permission_level:
+              typeof defaultAdmin.permissionLevel === 'number'
+                ? defaultAdmin.permissionLevel
+                : ({ admin: 4, high: 3, normal: 2, low: 1 } as Record<string, number>)[String(defaultAdmin.permissionLevel)] || 2,
+          })
+        }
+      } catch {
+        setUserList([])
+      }
+    }
+    loadUsers()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const handleSwitchUser = async (u: UserType) => {
+    setUserLoading(true)
+    try {
+      const logged = await api.login({ username: u.name })
+      setCurrentUser({
+        id: logged.id,
+        name: logged.name,
+        role: logged.role,
+        department: logged.department,
+        permission_level:
+          typeof logged.permissionLevel === 'number'
+            ? logged.permissionLevel
+            : ({ admin: 4, high: 3, normal: 2, low: 1 } as Record<string, number>)[String(logged.permissionLevel)] || 2,
+      })
+    } catch {
+      // fallback
+      setCurrentUser({
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        department: u.department,
+        permission_level:
+          typeof u.permissionLevel === 'number'
+            ? u.permissionLevel
+            : ({ admin: 4, high: 3, normal: 2, low: 1 } as Record<string, number>)[String(u.permissionLevel)] || 2,
+      })
+    } finally {
+      setShowUserMenu(false)
+      setUserLoading(false)
+    }
+  }
+
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === '系统管理员'
 
   return (
     <div className="flex min-h-screen bg-surface">
@@ -156,10 +224,72 @@ export default function Layout() {
 
             <div className="w-px h-6 bg-border" />
 
-            <button className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-card text-text-secondary hover:text-text-primary transition-colors">
-              <LogOut className="w-4 h-4" />
-              <span className="text-sm">退出</span>
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                disabled={userLoading}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-card text-text-secondary hover:text-text-primary transition-colors"
+              >
+                {userLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center flex-shrink-0">
+                    <User className="w-3.5 h-3.5 text-accent" />
+                  </div>
+                )}
+                <div className="text-left leading-tight">
+                  <p className="text-sm font-medium text-text-primary">{currentUser.name}</p>
+                  <p className="text-[11px] text-text-muted">{currentUser.department}</p>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showUserMenu && (
+                <div className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-lg shadow-card-hover overflow-hidden animate-fade-in z-50">
+                  <div className="px-4 py-3 border-b border-border bg-surface/50">
+                    <p className="text-xs text-text-muted">当前身份</p>
+                    <p className="text-sm font-medium text-text-primary mt-0.5">
+                      {currentUser.name} · {currentUser.role}
+                    </p>
+                    <p className="text-xs text-text-muted mt-0.5">{currentUser.department}</p>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    <div className="px-3 py-2 text-[11px] text-text-muted uppercase tracking-widest">切换账号</div>
+                    {userList.map((u) => (
+                      <button
+                        key={u.id}
+                        onClick={() => handleSwitchUser(u)}
+                        disabled={userLoading || u.id === currentUser.id}
+                        className={`w-full text-left px-4 py-2.5 hover:bg-surface transition-colors flex items-center gap-3 ${
+                          u.id === currentUser.id ? 'bg-accent/10' : ''
+                        }`}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          u.id === currentUser.id ? 'bg-accent text-primary' : 'bg-primary'
+                        }`}>
+                          <User className={`w-4 h-4 ${u.id === currentUser.id ? '' : 'text-accent'}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-text-primary truncate">{u.name}</p>
+                          <p className="text-xs text-text-muted truncate">
+                            {u.role} · {u.department}
+                          </p>
+                        </div>
+                        {u.id === currentUser.id && (
+                          <span className="text-[10px] text-accent font-medium">当前</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="border-t border-border px-4 py-2">
+                    <button className="flex items-center gap-2 w-full px-2 py-2 rounded-lg text-text-secondary hover:text-danger hover:bg-danger/10 transition-colors text-sm">
+                      <LogOut className="w-4 h-4" />
+                      退出登录
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

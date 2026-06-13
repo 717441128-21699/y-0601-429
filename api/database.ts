@@ -71,7 +71,7 @@ db.exec(`
     appointment_time DATETIME,
     expected_return DATETIME,
     actual_return DATETIME,
-    status TEXT DEFAULT '待审批' CHECK(status IN ('待审批','已通过','已拒绝','借出中','已归还','已超期')),
+    status TEXT DEFAULT '待审批' CHECK(status IN ('待审批','已通过','待取卷','已拒绝','借出中','已归还','已超期')),
     approval_result TEXT,
     overdue_fee REAL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP

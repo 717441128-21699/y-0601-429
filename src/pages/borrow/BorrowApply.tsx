@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { FileText, Search, Loader2, CheckCircle, Clock, XCircle, Calendar, User, AlertCircle } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Archive, BorrowCreateResult, User as UserType, AppointmentItem } from '@/types/api'
+import useAppStore from '@/stores/useAppStore'
+import type { Archive, BorrowCreateResult, AppointmentItem } from '@/types/api'
 
 const BORROW_TYPES = ['阅览', '外借', '复制']
 
@@ -13,27 +14,15 @@ export default function BorrowApply() {
   const [searching, setSearching] = useState(false)
   const [result, setResult] = useState<BorrowCreateResult | null>(null)
   const [error, setError] = useState('')
-  const [currentUser, setCurrentUser] = useState<UserType | null>(null)
   const [appointments, setAppointments] = useState<AppointmentItem[]>([])
   const [apptLoading, setApptLoading] = useState(false)
+  const currentUser = useAppStore((s) => s.currentUser)
   const [form, setForm] = useState({
     purpose: '',
     borrowType: '阅览',
     appointmentTime: '',
     expectedReturnDate: '',
   })
-
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const user = await api.getCurrentUser()
-        setCurrentUser(user)
-      } catch {
-        // ignore
-      }
-    }
-    init()
-  }, [])
 
   useEffect(() => {
     const doSearch = async () => {

@@ -195,49 +195,70 @@ router.get('/overview', (req: Request, res: Response): void => {
   }
 })
 
+function buildSummary(startDate: string, endDate: string) {
+  const monthBorrows = db.prepare(
+    `SELECT COUNT(*) as count
+     FROM borrows
+     WHERE created_at >= ? AND created_at <= ?`
+  ).get(startDate, endDate) as any
+
+  const monthApproved = db.prepare(
+    `SELECT COUNT(*) as count
+     FROM borrows
+     WHERE created_at >= ? AND created_at <= ?
+       AND status IN ('已通过', '借出中', '已归还', '已超期')`
+  ).get(startDate, endDate) as any
+
+  const monthPending = db.prepare(
+    `SELECT COUNT(*) as count
+     FROM borrows
+     WHERE created_at >= ? AND created_at <= ?
+       AND status = '待审批'`
+  ).get(startDate, endDate) as any
+
+  const monthRejected = db.prepare(
+    `SELECT COUNT(*) as count
+     FROM borrows
+     WHERE created_at >= ? AND created_at <= ?
+       AND status = '已拒绝'`
+  ).get(startDate, endDate) as any
+
+  const monthOverdue = db.prepare(
+    `SELECT COUNT(*) as count,
+            COALESCE(SUM(overdue_fee), 0) as total_fee
+     FROM borrows
+     WHERE expected_return >= ? AND expected_return <= ?
+       AND status IN ('已超期', '借出中')
+       AND datetime(expected_return) < datetime('now')`
+  ).get(startDate, endDate) as any
+
+  return {
+    monthBorrows: monthBorrows.count,
+    monthApproved: monthApproved.count,
+    monthPending: monthPending.count,
+    monthRejected: monthRejected.count,
+    monthOverdueCount: monthOverdue.count || 0,
+    monthOverdueFee: monthOverdue.total_fee || 0,
+  }
+}
+
 router.get('/monthly-report', (req: Request, res: Response): void => {
   try {
     const month = (req.query.month as string) || new Date().toISOString().slice(0, 7)
     const startDate = `${month}-01T00:00:00.000Z`
     const endDate = new Date(new Date(startDate).getFullYear(), new Date(startDate).getMonth() + 1, 0, 23, 59, 59).toISOString()
 
+    const currentYear = new Date(startDate).getFullYear()
+    const currentMonth = new Date(startDate).getMonth()
+    const prevDate = new Date(currentYear, currentMonth - 1, 1)
+    const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`
+    const prevStartDate = `${prevMonth}-01T00:00:00.000Z`
+    const prevEndDate = new Date(prevDate.getFullYear(), prevDate.getMonth() + 1, 0, 23, 59, 59).toISOString()
+
+    const summary = buildSummary(startDate, endDate)
+    const prevMonthSummary = buildSummary(prevStartDate, prevEndDate)
+
     const totalArchives = db.prepare('SELECT COUNT(*) as count FROM archives').get() as any
-
-    const monthBorrows = db.prepare(
-      `SELECT COUNT(*) as count
-       FROM borrows
-       WHERE created_at >= ? AND created_at <= ?`
-    ).get(startDate, endDate) as any
-
-    const monthApproved = db.prepare(
-      `SELECT COUNT(*) as count
-       FROM borrows
-       WHERE created_at >= ? AND created_at <= ?
-         AND status IN ('已通过', '借出中', '已归还', '已超期')`
-    ).get(startDate, endDate) as any
-
-    const monthPending = db.prepare(
-      `SELECT COUNT(*) as count
-       FROM borrows
-       WHERE created_at >= ? AND created_at <= ?
-         AND status = '待审批'`
-    ).get(startDate, endDate) as any
-
-    const monthRejected = db.prepare(
-      `SELECT COUNT(*) as count
-       FROM borrows
-       WHERE created_at >= ? AND created_at <= ?
-         AND status = '已拒绝'`
-    ).get(startDate, endDate) as any
-
-    const monthOverdue = db.prepare(
-      `SELECT COUNT(*) as count,
-              COALESCE(SUM(overdue_fee), 0) as total_fee
-       FROM borrows
-       WHERE expected_return >= ? AND expected_return <= ?
-         AND status IN ('已超期', '借出中')
-         AND datetime(expected_return) < datetime('now')`
-    ).get(startDate, endDate) as any
 
     const totalOverdue = db.prepare(
       `SELECT COUNT(*) as count,
@@ -247,6 +268,25 @@ router.get('/monthly-report', (req: Request, res: Response): void => {
          AND expected_return IS NOT NULL
          AND datetime(expected_return) < datetime('now')`
     ).get() as any
+
+    const borrowsChange = summary.monthBorrows - prevMonthSummary.monthBorrows
+    const borrowsChangeRate = prevMonthSummary.monthBorrows > 0
+      ? Math.round((borrowsChange / prevMonthSummary.monthBorrows) * 1000) / 10
+      : 0
+    const overdueCountChange = summary.monthOverdueCount - prevMonthSummary.monthOverdueCount
+    const overdueFeeChange = summary.monthOverdueFee - prevMonthSummary.monthOverdueFee
+
+    const currentApprovalRate = summary.monthBorrows > 0 ? summary.monthApproved / summary.monthBorrows : 0
+    const prevApprovalRate = prevMonthSummary.monthBorrows > 0 ? prevMonthSummary.monthApproved / prevMonthSummary.monthBorrows : 0
+    const approvalRateChange = Math.round((currentApprovalRate - prevApprovalRate) * 1000) / 10
+
+    const chainGrowth = {
+      borrowsChange,
+      borrowsChangeRate,
+      overdueCountChange,
+      overdueFeeChange,
+      approvalRateChange,
+    }
 
     const borrowingTrend = db.prepare(
       `SELECT strftime('%Y-%m-%d', created_at) as date,
@@ -325,15 +365,12 @@ router.get('/monthly-report', (req: Request, res: Response): void => {
         month,
         summary: {
           totalArchives: totalArchives.count,
-          monthBorrows: monthBorrows.count,
-          monthApproved: monthApproved.count,
-          monthPending: monthPending.count,
-          monthRejected: monthRejected.count,
-          monthOverdueCount: monthOverdue.count || 0,
-          monthOverdueFee: monthOverdue.total_fee || 0,
+          ...summary,
           totalOverdueCount: totalOverdue.count || 0,
           totalOverdueFee: totalOverdue.total_fee || 0,
         },
+        prevMonthSummary,
+        chainGrowth,
         borrowingTrend,
         borrowByType,
         borrowByDepartment,

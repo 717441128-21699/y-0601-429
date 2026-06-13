@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  BarChart3, Download, TrendingUp, FileWarning, Warehouse, Calendar,
+  BarChart3, Download, TrendingUp, FileWarning, Warehouse, Calendar, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -40,6 +40,14 @@ export default function StatisticsUtilization() {
     setTimeout(() => setToast(''), 3000)
   }
 
+  const shiftMonth = (delta: number) => {
+    const [y, m] = exportMonth.split('-').map(Number)
+    const d = new Date(y, m - 1 + delta, 1)
+    const yy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    setExportMonth(`${yy}-${mm}`)
+  }
+
   const exportPDF = () => {
     if (!report) return
     const doc = new jsPDF()
@@ -76,6 +84,24 @@ export default function StatisticsUtilization() {
       tableWidth: 85,
       margin: { left: 14 },
     })
+
+    if (report.chainGrowth) {
+      const cg = report.chainGrowth
+      const chainData = [
+        ['借阅申请量', `${cg.borrowsChange > 0 ? '+' : ''}${cg.borrowsChange}件`, `${cg.borrowsChangeRate > 0 ? '+' : ''}${cg.borrowsChangeRate.toFixed(1)}%`],
+        ['新增逾期', `${cg.overdueCountChange > 0 ? '+' : ''}${cg.overdueCountChange}件`, '-'],
+        ['逾期费用', `${cg.overdueFeeChange > 0 ? '+' : ''}${cg.overdueFeeChange.toFixed(1)}元`, '-'],
+        ['审批通过率', `${cg.approvalRateChange > 0 ? '+' : ''}${cg.approvalRateChange.toFixed(1)}个百分点`, '-'],
+      ]
+      autoTable(doc, {
+        head: [['环比指标', '变化量', '变化率']],
+        body: chainData,
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [107, 114, 128], textColor: 255 },
+        theme: 'grid',
+        margin: { left: 14 },
+      })
+    }
 
     const yAfterSummary = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15
 
@@ -208,6 +234,20 @@ export default function StatisticsUtilization() {
     ws5['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 10 }]
     XLSX.utils.book_append_sheet(wb, ws5, '部门统计')
 
+    if (report.chainGrowth) {
+      const cg = report.chainGrowth
+      const chainData = [
+        ['环比指标', '变化量', '变化率'],
+        ['借阅申请量', cg.borrowsChange, cg.borrowsChangeRate],
+        ['新增逾期', cg.overdueCountChange, '-'],
+        ['逾期费用(元)', cg.overdueFeeChange, '-'],
+        ['审批通过率(百分点)', cg.approvalRateChange, '-'],
+      ]
+      const ws6 = XLSX.utils.aoa_to_sheet(chainData)
+      ws6['!cols'] = [{ wch: 18 }, { wch: 12 }, { wch: 12 }]
+      XLSX.utils.book_append_sheet(wb, ws6, '环比对比')
+    }
+
     XLSX.writeFile(wb, `档案馆月度报告_${report.month}.xlsx`)
   }
 
@@ -280,15 +320,34 @@ export default function StatisticsUtilization() {
           <BarChart3 className="w-5 h-5 text-accent" />
           月度运行报告
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-text-muted" />
+            <button
+              onClick={() => shiftMonth(-1)}
+              className="btn-ghost !p-2"
+              title="上一月"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
             <input
               type="month"
               className="input-base !w-[160px]"
               value={exportMonth}
               onChange={(e) => setExportMonth(e.target.value)}
             />
+            <button
+              onClick={() => shiftMonth(1)}
+              className="btn-ghost !p-2"
+              title="下一月"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => shiftMonth(-1)} className="btn-secondary text-xs !px-2.5 !py-1.5">-1月</button>
+            <button onClick={() => shiftMonth(-2)} className="btn-secondary text-xs !px-2.5 !py-1.5">-2月</button>
+            <button onClick={() => shiftMonth(-3)} className="btn-secondary text-xs !px-2.5 !py-1.5">-3月</button>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => handleExport('pdf')} className="btn-primary flex items-center gap-1.5">
@@ -317,6 +376,46 @@ export default function StatisticsUtilization() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="card-base p-5">
+        <h3 className="text-heading text-sm mb-4 flex items-center gap-1.5">
+          <TrendingUp className="w-4 h-4 text-accent" />
+          环比上月
+        </h3>
+        {report.chainGrowth ? (
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-surface rounded-lg p-4">
+              <p className="text-text-muted text-xs mb-1.5">借阅申请量</p>
+              <p className="text-lg font-semibold text-text-primary">
+                {report.chainGrowth.borrowsChange > 0 ? '+' : ''}{report.chainGrowth.borrowsChange}件
+              </p>
+              <p className={`text-sm mt-1 font-medium ${report.chainGrowth.borrowsChangeRate >= 0 ? 'text-success' : 'text-danger'}`}>
+                {report.chainGrowth.borrowsChangeRate > 0 ? '+' : ''}{report.chainGrowth.borrowsChangeRate.toFixed(1)}%
+              </p>
+            </div>
+            <div className="bg-surface rounded-lg p-4">
+              <p className="text-text-muted text-xs mb-1.5">新增逾期</p>
+              <p className="text-lg font-semibold text-text-primary">
+                {report.chainGrowth.overdueCountChange > 0 ? '+' : ''}{report.chainGrowth.overdueCountChange}件
+              </p>
+            </div>
+            <div className="bg-surface rounded-lg p-4">
+              <p className="text-text-muted text-xs mb-1.5">逾期费用</p>
+              <p className="text-lg font-semibold text-text-primary">
+                {report.chainGrowth.overdueFeeChange > 0 ? '+' : ''}{report.chainGrowth.overdueFeeChange.toFixed(1)}元
+              </p>
+            </div>
+            <div className="bg-surface rounded-lg p-4">
+              <p className="text-text-muted text-xs mb-1.5">审批通过率</p>
+              <p className="text-lg font-semibold text-text-primary">
+                {report.chainGrowth.approvalRateChange > 0 ? '+' : ''}{report.chainGrowth.approvalRateChange.toFixed(1)}个百分点
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="py-8 text-center text-text-muted text-sm">上月数据不足，无法计算环比</div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-5">

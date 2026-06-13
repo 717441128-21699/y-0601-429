@@ -66,10 +66,6 @@ router.post('/', (req: Request, res: Response): void => {
       return
     }
 
-    if (archive.status === '借出') {
-      res.status(400).json({ success: false, error: '档案已借出，无法预约' })
-      return
-    }
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as any
     if (!user) {
@@ -99,7 +95,7 @@ router.post('/', (req: Request, res: Response): void => {
       const conflict = db.prepare(
         `SELECT COUNT(*) as count FROM borrows
          WHERE archive_id = ?
-           AND status IN ('已通过', '借出中', '待审批')
+           AND status IN ('待审批', '已通过', '待取卷', '借出中')
            AND appointment_time IS NOT NULL
            AND expected_return IS NOT NULL
            AND NOT (
@@ -119,6 +115,9 @@ router.post('/', (req: Request, res: Response): void => {
     } else if (userPermLevel >= archiveSecrecyLevel && archive.secrecy_level !== '机密') {
       status = '已通过'
       approvalResult = '自动审批通过'
+      if (!appointmentTime) {
+        status = '待取卷'
+      }
     } else if (userPermLevel < archiveSecrecyLevel) {
       status = '已拒绝'
       approvalResult = '用户权限不足，无法借阅该保密等级档案'
@@ -135,7 +134,7 @@ router.post('/', (req: Request, res: Response): void => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
       ).run(id, archiveId, userId, purpose || null, borrowType, appointmentTime || null, expectedReturnDate || null, status, approvalResult)
 
-      if (status === '已通过' && !appointmentTime) {
+      if (status === '待取卷') {
         db.prepare("UPDATE archives SET status = '锁定' WHERE id = ?").run(archiveId)
       }
     })
@@ -148,7 +147,7 @@ router.post('/', (req: Request, res: Response): void => {
         id,
         status,
         approvalResult,
-        autoApproved: status === '已通过',
+        autoApproved: status === '已通过' || status === '待取卷',
       },
     })
   } catch (error) {
@@ -173,9 +172,11 @@ router.put('/:id/approve', (req: Request, res: Response): void => {
 
     const update = db.transaction(() => {
       if (approved) {
-        db.prepare("UPDATE borrows SET status = '已通过', approval_result = '人工审批通过' WHERE id = ?").run(req.params.id)
         if (!borrow.appointment_time) {
+          db.prepare("UPDATE borrows SET status = '待取卷', approval_result = '人工审批通过' WHERE id = ?").run(req.params.id)
           db.prepare("UPDATE archives SET status = '锁定' WHERE id = ?").run(borrow.archive_id)
+        } else {
+          db.prepare("UPDATE borrows SET status = '已通过', approval_result = '人工审批通过' WHERE id = ?").run(req.params.id)
         }
       } else {
         db.prepare("UPDATE borrows SET status = '已拒绝', approval_result = '人工审批拒绝' WHERE id = ?").run(req.params.id)
@@ -201,6 +202,57 @@ router.put('/:id/approve', (req: Request, res: Response): void => {
   }
 })
 
+router.post('/:id/confirm-pickup', (req: Request, res: Response): void => {
+  try {
+    const borrow = db.prepare('SELECT * FROM borrows WHERE id = ?').get(req.params.id) as any
+    if (!borrow) {
+      res.status(404).json({ success: false, error: '借阅记录不存在' })
+      return
+    }
+
+    const now = new Date()
+    const appointmentTime = borrow.appointment_time ? new Date(borrow.appointment_time) : null
+
+    const isReadyForPickup = borrow.status === '待取卷' ||
+      (borrow.status === '已通过' && appointmentTime !== null && appointmentTime <= now)
+
+    if (!isReadyForPickup) {
+      res.status(400).json({ success: false, error: '该借阅记录当前不可取卷' })
+      return
+    }
+
+    const pickupTime = now.toISOString()
+
+    const update = db.transaction(() => {
+      db.prepare(
+        "UPDATE borrows SET status = '借出中' WHERE id = ?"
+      ).run(req.params.id)
+
+      const archive = db.prepare('SELECT status FROM archives WHERE id = ?').get(borrow.archive_id) as any
+      if (archive && archive.status !== '借出') {
+        db.prepare("UPDATE archives SET status = '借出' WHERE id = ?").run(borrow.archive_id)
+      }
+    })
+
+    update()
+
+    const updated = db.prepare(
+      `SELECT b.*, a.title as archive_title, a.archive_number,
+              a.warehouse_id, a.shelf_id,
+              w.name as warehouse_name, s.code as shelf_code, s.position as shelf_position
+       FROM borrows b
+       LEFT JOIN archives a ON b.archive_id = a.id
+       LEFT JOIN warehouses w ON a.warehouse_id = w.id
+       LEFT JOIN shelves s ON a.shelf_id = s.id
+       WHERE b.id = ?`
+    ).get(req.params.id)
+
+    res.json({ success: true, data: { ...updated, pickup_time: pickupTime } })
+  } catch (error) {
+    res.status(500).json({ success: false, error: '确认取卷操作失败' })
+  }
+})
+
 router.post('/:id/return', (req: Request, res: Response): void => {
   try {
     const borrow = db.prepare('SELECT * FROM borrows WHERE id = ?').get(req.params.id) as any
@@ -209,7 +261,7 @@ router.post('/:id/return', (req: Request, res: Response): void => {
       return
     }
 
-    if (!['已通过', '借出中', '已超期'].includes(borrow.status)) {
+    if (!['已通过', '待取卷', '借出中', '已超期'].includes(borrow.status)) {
       res.status(400).json({ success: false, error: '该借阅记录无法执行归还操作' })
       return
     }
